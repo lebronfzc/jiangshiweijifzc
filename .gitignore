@@ -1,0 +1,21 @@
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editors / IDE
+.vscode/
+.idea/
+*.swp
+
+# Logs / temp
+*.log
+tmp/
+.cache/
+
+# Node (in case tooling is added later)
+node_modules/
+
+# Build output (打包产物，可由 tools/package.ps1 重新生成)
+release/
+*.zip
