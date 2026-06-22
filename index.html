@@ -2,12 +2,18 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>僵尸危机：方块头 · 经典复刻版</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div id="wrap"><canvas id="game" width="960" height="640"></canvas></div>
+
+<div id="rotate" class="hidden">
+  <div class="rot-icon">📱</div>
+  <div class="rot-title">请旋转到横屏</div>
+  <div class="rot-sub">本游戏为横版视角，横屏体验最佳</div>
+</div>
 
 <div id="touchUI">
   <div class="stick" id="stickL"><div class="nub" id="nubL"></div></div>

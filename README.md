@@ -63,6 +63,19 @@ zombie-world.zip
 - 鼠标模式：左键点击或按住朝指针方向攻击，右键点击或按住移动
 - 触屏模式：左摇杆移动，右摇杆瞄准射击
 
+## 多设备适配
+
+参照官方《Toy 多设备自适应设计参考》（见 [docs/toy-responsive-guide.md](docs/toy-responsive-guide.md)）做了手机 / 平板 / PC 三档适配：
+
+- **画布等比缩放**：逻辑用 960×640 虚拟坐标，渲染时按容器尺寸映射真实像素，不写死宽高。
+- **安全区**：`viewport-fit=cover` + `env(safe-area-inset-*)`，画布与界面避开刘海、底部指示条。
+- **移动端可视区**：用 `100dvh` 处理地址栏展开收起；监听 `resize` / `orientationchange` / `visualViewport` 重算画布。
+- **输入分层**：`pointer:coarse` 判定触摸设备显示虚拟摇杆，PC（鼠标/键盘）隐藏摇杆；三套输入共用一套游戏逻辑。
+- **横竖屏**：本作为横版视角，手机竖屏时显示「请旋转到横屏」提示并冻结，旋转回横屏无缝继续；平板竖屏可直接游玩。
+- **性能**：手机端自动降低粒子数量与爆炸碎屑上限，缓解低端机卡顿。
+
+可在浏览器开发者工具的设备模拟下，分别检查手机竖/横屏、平板、PC 表现。
+
 ## 文件结构
 
 ```text
@@ -76,6 +89,8 @@ zombie-world.zip
 ├── tools/            # 开发辅助脚本（不进 zip）
 │   ├── make_cover.py #   生成封面/横幅
 │   └── package.ps1   #   打包成平台 zip
+├── docs/             # 参考文档（不进 zip）
+│   └── toy-responsive-guide.md  # 官方多设备自适应指南
 ├── README.md
 └── .claude/launch.json   # 本地静态预览配置
 ```

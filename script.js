@@ -6,15 +6,37 @@
    ============================================================ */
 const cvs = document.getElementById('game');
 const ctx = cvs.getContext('2d');
-const VW = 960, VH = 640;          // 视口
+const wrap = document.getElementById('wrap');
+const rotateTip = document.getElementById('rotate');
+const VW = 960, VH = 640;          // 视口（虚拟坐标系）
 const WW = 1920, WH = 1280;        // 世界尺寸
 
+// 画布按容器尺寸等比缩放（保持 3:2，扣除安全区内边距）；逻辑用虚拟坐标，渲染时映射真实像素
 function fit(){
-  const s = Math.min(innerWidth / VW, innerHeight / VH);
-  cvs.style.width  = (VW * s) + 'px';
-  cvs.style.height = (VH * s) + 'px';
+  const cs = getComputedStyle(wrap);
+  const availW = wrap.clientWidth  - parseFloat(cs.paddingLeft)  - parseFloat(cs.paddingRight);
+  const availH = wrap.clientHeight - parseFloat(cs.paddingTop)   - parseFloat(cs.paddingBottom);
+  const s = Math.min(availW / VW, availH / VH);
+  cvs.style.width  = Math.round(VW * s) + 'px';
+  cvs.style.height = Math.round(VH * s) + 'px';
 }
-addEventListener('resize', fit); fit();
+
+// 多设备环境判断（参照 Toy 多设备自适应指南：组合 pointer/hover/visualViewport，不只看 UA）
+const coarsePointer = matchMedia('(pointer: coarse)').matches;
+const isTouch = coarsePointer || ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+function isPhone(){ return Math.min(innerWidth, innerHeight) <= 540; }
+
+// 横版游戏：手机竖屏时提示旋转并冻结，避免画面被压成无法游玩的窄条
+let portraitBlock = false;
+function checkOrient(){
+  portraitBlock = isPhone() && innerHeight > innerWidth;
+  rotateTip.classList.toggle('hidden', !portraitBlock);
+}
+function onViewportChange(){ fit(); checkOrient(); }
+addEventListener('resize', onViewportChange);
+addEventListener('orientationchange', onViewportChange);
+if (window.visualViewport) visualViewport.addEventListener('resize', onViewportChange);
+onViewportChange();
 
 /* ========================================================
    音效 v2 —— 全部 Web Audio 实时合成，强调打击感
@@ -443,7 +465,6 @@ const stickL = document.getElementById('stickL'), nubL = document.getElementById
 const stickR = document.getElementById('stickR'), nubR = document.getElementById('nubR');
 const swapBtn = document.getElementById('swapBtn');
 let tMove = { id:null, ox:0, oy:0, vx:0, vy:0 }, tFire = { id:null, ox:0, oy:0, vx:0, vy:0 };
-const isTouch = ('ontouchstart' in window);
 function placeStick(el, x, y){ el.style.left = (x-60)+'px'; el.style.top = (y-60)+'px'; el.style.display='block'; }
 function placeNub(nub, vx, vy){
   const m = Math.min(1, Math.hypot(vx,vy)/50);
@@ -586,6 +607,7 @@ function spawnEnemy(){
 
 /* ---------- 粒子 / 射击 / 爆炸 ---------- */
 function blood(x, y, n, big){
+  if (isPhone()) n = Math.ceil(n * .5);          // 手机降低粒子量，缓解低端机卡顿
   for (let i = 0; i < n; i++){
     const a = Math.random()*6.28, s = 40 + Math.random()*(big?220:120);
     particles.push({ x, y, vx:Math.cos(a)*s, vy:Math.sin(a)*s, life:.3+Math.random()*.35,
@@ -593,6 +615,7 @@ function blood(x, y, n, big){
   }
 }
 function sparks(x, y, n, color){
+  if (isPhone()) n = Math.ceil(n * .5);          // 手机降低粒子量
   for (let i = 0; i < n; i++){
     const a = Math.random()*6.28, s = 60 + Math.random()*200;
     particles.push({ x, y, vx:Math.cos(a)*s, vy:Math.sin(a)*s, life:.15+Math.random()*.25,
@@ -653,7 +676,7 @@ function shoot(now){
 function explode(x, y, radius, dmg){
   sfx('boom'); shake = Math.max(shake, 14);
   scorch(x, y, radius*.7);
-  for (let i = 0; i < 40; i++){
+  for (let i = 0, n = isPhone() ? 22 : 40; i < n; i++){
     const a = Math.random()*6.28, s = 60+Math.random()*340;
     particles.push({ x, y, vx:Math.cos(a)*s, vy:Math.sin(a)*s, life:.25+Math.random()*.4, max:.6,
       size:3+Math.random()*5, color:['#ffd23e','#ff8c2e','#e03c31','#5a5650'][(Math.random()*4)|0] });
@@ -1167,7 +1190,8 @@ function update(dt, now){
   }
 
   // ----- 粒子 -----
-  if (particles.length > 800) particles.splice(0, particles.length - 800);  // 软上限，防连环爆炸粒子暴涨卡顿
+  const pcap = isPhone() ? 400 : 800;                                       // 软上限，防连环爆炸粒子暴涨卡顿（手机更低）
+  if (particles.length > pcap) particles.splice(0, particles.length - pcap);
   for (let i = particles.length-1; i >= 0; i--){
     const p = particles[i];
     p.life -= dt;
@@ -2038,6 +2062,7 @@ document.getElementById('btnMenu').onclick  = () => setScreen('menu');
 /* ---------- 主循环 ---------- */
 let last = performance.now();
 function loop(now){
+  if (portraitBlock){ last = now; requestAnimationFrame(loop); return; }   // 竖屏冻结，旋转回横屏后无缝继续
   const dt = Math.min(.033, (now - last)/1000);
   last = now;
   if (state === 'play') update(dt, now);
