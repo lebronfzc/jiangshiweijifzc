@@ -4086,6 +4086,30 @@ net.addEventListener('snapshot', event => {
   if (Number.isFinite(event.detail.simTime)) time = event.detail.simTime;
   applyNetworkState(event.detail.state);
 });
+/* 「联机服务器连接中断。」这句话等于没说。浏览器不让脚本看到 WebSocket 握手的
+   HTTP 状态码，所以这里绕一下：连不上时去探一次 /healthz——
+   探得通说明服务器活着，那就是握手被拒（最常见的是从 file:// 或别的端口打开，
+   来源不在白名单里）；探不通才是网络或服务器的问题。 */
+async function explainNetFailure(){
+  let base;
+  try {
+    const u = new URL(net.url);
+    u.protocol = u.protocol === 'wss:' ? 'https:' : 'http:';
+    u.pathname = u.pathname.replace(/\/ws$/, '/healthz');
+    base = u.toString();
+  } catch (_) { return '联机服务器连不上。'; }
+  try {
+    const r = await fetch(base, { cache:'no-store' });
+    if (r.ok){
+      const here = location.origin;
+      return '服务器是通的，但它拒绝了这个页面的来源（' + here + '）。'
+           + '把游戏从正式地址打开就好——本地直接双击 index.html 是连不上的。';
+    }
+    return '联机服务器没有正常应答（' + r.status + '）。';
+  } catch (_) {
+    return '连不上联机服务器。检查一下网络；也可能是服务器正好在重启。';
+  }
+}
 net.addEventListener('error', event => {
   setRoomRequestBusy(false);
   const text = ONLINE_ERROR_TEXT[event.detail.code] || event.detail.message || '联机请求失败。';
@@ -4109,8 +4133,13 @@ net.addEventListener('status', event => {
     setOnlineStatus(net.room ? '已重新连接。' : '服务器已连接。', 'ok');
     refreshNetHud();
   } else if (status === 'disconnected' || status === 'error'){
-    setOnlineStatus('联机服务器连接中断。', 'error');
+    // 先给一句立刻能看见的，再去探因、把话说具体
+    setOnlineStatus('联机服务器连不上，正在看是什么原因…', 'error');
     refreshNetHud('断线');
+    explainNetFailure().then(msg => {
+      if (net.connected) return;                 // 探的过程中又连上了就别覆盖
+      setOnlineStatus(msg, 'error');
+    }).catch(() => {});
   }
 });
 document.addEventListener('visibilitychange', () => {

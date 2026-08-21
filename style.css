@@ -19,6 +19,11 @@
     display:flex; align-items:center; justify-content:center; box-sizing:border-box;
     padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
   canvas#game { background:#d9cdb4; box-shadow:0 0 80px rgba(0,0,0,.9); }
+  /* 这几层是要能上下滑的：html/body 上的 touch-action:none 是为了钉住游戏手势，
+     但 iOS 会把它一路继承下来，结果长内容的弹层在手机上滑不动——
+     「玩法说明」底部的『触屏诊断』因此谁也点不到（2026-08-21 真机反馈）。
+     这里显式把纵向平移放回来。 */
+  .screen, #shop { touch-action:pan-y; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; }
   .screen { position:fixed; inset:0; display:flex; flex-direction:column; align-items:center;
     justify-content:center; background:rgba(14,12,9,.9); z-index:10; color:#e8e4d8; text-align:center;
     overflow-y:auto; padding: max(12px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left)); }
@@ -37,6 +42,21 @@
     padding:26px 30px; text-align:left; font-size:min(3.8vw,15.5px); line-height:2.05; color:#d8d2c2; }
   .help-box h2 { color:#f2efe4; font-size:min(5vw,20px); margin-bottom:10px; letter-spacing:.2em; }
   .help-box b { color:#ffb33e; font-weight:700; }
+  /* 手机第一屏只放这四行，其余折叠 */
+  .help-quick .hq-row { display:grid; grid-template-columns:4.6em minmax(0,1fr); gap:10px;
+    align-items:baseline; padding:6px 0; line-height:1.7; }
+  .help-quick .hq-k { color:#ffb33e; font-weight:700; letter-spacing:.06em; }
+  .help-quick .hq-tip { margin-top:8px; color:#9c947f; font-size:.92em; line-height:1.7; }
+  .help-box details { border-top:1px solid #3a352a; }
+  .help-box details > summary { cursor:pointer; list-style:none; padding:12px 0 10px;
+    color:#f2efe4; font-weight:700; letter-spacing:.1em; display:flex; align-items:center; gap:9px;
+    font-size:min(4.2vw,16px); }
+  .help-box details > summary::-webkit-details-marker { display:none; }
+  .help-box details > summary::before { content:"▸"; font-size:.72em; color:#ffb33e;
+    transition:transform .16s ease; }
+  .help-box details[open] > summary::before { transform:rotate(90deg); }
+  .help-box details[open] > summary { color:#ffb33e; }
+  .help-box details > *:not(summary) { display:block; padding:0 0 14px; }
   kbd { display:inline-block; min-width:26px; padding:1px 7px; margin:0 2px; text-align:center;
     background:#26221a; border:1px solid #57503f; border-bottom-width:3px; border-radius:4px;
     color:#f2efe4; font-family:inherit; font-size:.9em; }

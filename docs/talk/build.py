@@ -16,6 +16,13 @@ def read(p):
 parts = [read(HERE / f) for f in ("_p1_style.html", "_p2_slides.html", "_p3_script.html")]
 html = "\n".join(parts)
 
+# --- 内嵌字体子集（make_fonts.py 产出）---
+# 不走 fonts.googleapis.com：场地网络取不到就会掉回 SimSun，投影上糊成一片。
+fonts = HERE / "fonts.css"
+if not fonts.exists():
+    raise SystemExit("缺 fonts.css，先跑一次 python make_fonts.py")
+html = html.replace("__FONTS_CSS__", "<style>" + read(fonts) + "</style>")
+
 # --- 海报转 data URI ---
 poster = base64.b64encode((ROOT / "images" / "poster.png").read_bytes()).decode()
 html = html.replace("__POSTER__", "data:image/png;base64," + poster)

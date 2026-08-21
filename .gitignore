@@ -26,3 +26,6 @@ __pycache__/
 
 # Cloudflare 部署令牌：只放本机，绝不进仓库
 signal/.cf-token
+
+# 字体子集的中间产物：原始 TTF 几十 MB，不入库（跑 docs/talk/make_fonts.py 重新生成）
+docs/talk/_fontwork/
