@@ -5,6 +5,47 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>僵尸危机：方块头 · 经典复刻版</title>
 <link rel="stylesheet" href="style.css">
+<!-- 最先装的一层：把任何脚本错误显示到屏幕上。
+     手机（尤其 App 内嵌 WebView）里看不到控制台，一处 throw 就是整块功能静默消失——
+     2026-08-21 iOS 真机反馈「走不动、开不了枪、联机板块整个没有」，就是这类症状，
+     而没有这一层，回来的信息永远只能是「就是不行」。
+     它必须在其它 script 之前、且自身不能依赖任何东西。 -->
+<script>
+(function(){
+  var shown = 0;
+  function show(msg){
+    if (shown >= 3) return; shown++;
+    try {
+      var d = document.createElement('div');
+      d.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:99999;'
+        + 'background:#7a1712;color:#ffe9e5;font:12px/1.5 monospace;'
+        + 'padding:6px 30px 6px 8px;white-space:pre-wrap;word-break:break-all;'
+        + '-webkit-user-select:text;user-select:text;max-height:38vh;overflow:auto';
+      d.textContent = msg;
+      var x = document.createElement('button');
+      x.textContent = '×';
+      x.style.cssText = 'position:absolute;right:4px;top:4px;width:22px;height:22px;'
+        + 'border:0;border-radius:4px;background:#ffe9e5;color:#7a1712;font:700 14px monospace';
+      x.onclick = function(){ d.parentNode && d.parentNode.removeChild(d); };
+      d.appendChild(x);
+      (document.body || document.documentElement).appendChild(d);
+    } catch (_){}
+  }
+  window.__zwFirstError = null;
+  window.addEventListener('error', function(e){
+    var m = (e && e.message) || 'script error';
+    var at = e && e.filename ? (' @ ' + String(e.filename).split('/').pop() + ':' + e.lineno + ':' + e.colno) : '';
+    if (!window.__zwFirstError) window.__zwFirstError = m + at;
+    show('脚本出错：' + m + at + '
+（这一条会让整块功能消失。截图发给作者即可定位）');
+  }, true);
+  window.addEventListener('unhandledrejection', function(e){
+    var m = (e && e.reason && (e.reason.message || e.reason)) || 'promise rejected';
+    if (!window.__zwFirstError) window.__zwFirstError = String(m);
+    show('异步出错：' + m);
+  });
+})();
+</script>
 </head>
 <body>
 <div id="wrap"><canvas id="game" width="960" height="640"></canvas></div>

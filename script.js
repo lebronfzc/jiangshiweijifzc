@@ -127,16 +127,30 @@ if (window.visualViewport) visualViewport.addEventListener('resize', onViewportC
    音效 v2 —— 全部 Web Audio 实时合成，强调打击感
    ======================================================== */
 let AC = null, master = null, comp = null;
+let audioDead = false;
+/* 这个函数在 touchstart 里被调用，所以它绝不能抛。
+   iOS 对 AudioContext 最严（WebView 里可能直接构造失败），而一旦它抛出去，
+   touchstart 后面的摇杆赋值和 preventDefault 全都不执行——表现就是
+   「走不动、开不了枪、长按还弹出复制菜单」，且手机上看不到那行报错。
+   没声音是可以接受的降级，输入断了不是。 */
 function audioInit(){
-  if (AC){
-    if (AC.state === 'suspended') AC.resume().catch(() => {});
-    return;
+  if (audioDead) return;
+  try {
+    if (AC){
+      if (AC.state === 'suspended') AC.resume().catch(() => {});
+      return;
+    }
+    const Ctor = window.AudioContext || window.webkitAudioContext;
+    if (!Ctor){ audioDead = true; return; }
+    AC = new Ctor();
+    comp = AC.createDynamicsCompressor();
+    comp.threshold.value = -14; comp.ratio.value = 6; comp.attack.value = .002; comp.release.value = .12;
+    master = AC.createGain(); master.gain.value = 0.6;
+    master.connect(comp); comp.connect(AC.destination);
+  } catch (err){
+    AC = null; audioDead = true;      // 别反复重试，静音继续玩
+    noteTouchError(err);
   }
-  AC = new (window.AudioContext || window.webkitAudioContext)();
-  comp = AC.createDynamicsCompressor();
-  comp.threshold.value = -14; comp.ratio.value = 6; comp.attack.value = .002; comp.release.value = .12;
-  master = AC.createGain(); master.gain.value = 0.6;
-  master.connect(comp); comp.connect(AC.destination);
 }
 // 全局复用一块 2 秒白噪声，避免每次音效都重新分配+填充缓冲
 let noiseBuf = null;
@@ -827,7 +841,7 @@ let tMove = { id:null, ox:0, oy:0, vx:0, vy:0, slot:-1, t0:0 };
 let tFire = { id:null, ox:0, oy:0, vx:0, vy:0, slot:-1, t0:0 };
 // 触屏诊断：iOS / WebView 上的触摸问题在本机复现不出来，只能让人在真机上打开这一层看
 let touchDebug = false;
-const touchDiag = { start:0, move:0, end:0, cancel:0, claimed:0, pd:0, live:0 };
+const touchDiag = { start:0, move:0, end:0, cancel:0, claimed:0, pd:0, live:0, err:'' };
 
 // 触屏按钮按画布实际位置摆放：既压不到底部武器栏，也不会掉进刘海/圆角里
 function layoutTouchUI(){
@@ -855,6 +869,12 @@ function placeNub(nub, vx, vy){
   const a = Math.atan2(vy, vx);
   nub.style.left = (34 + Math.cos(a)*34*m) + 'px';
   nub.style.top  = (34 + Math.sin(a)*34*m) + 'px';
+}
+/* 触摸链路上的第一条错误。手机没有控制台，这是唯一能带回来的线索。 */
+function noteTouchError(err){
+  if (touchDiag.err) return;
+  try { touchDiag.err = String((err && err.message) || err).slice(0, 90); }
+  catch (_) { touchDiag.err = 'unknown'; }
 }
 function releaseMove(){
   tMove = { id:null, ox:0, oy:0, vx:0, vy:0, slot:-1, t0:0 };
@@ -914,17 +934,37 @@ function weaponSlotAt(px, py){
       光靠 CSS 的 touch-action:none 在 WKWebView 里不保险，宿主的滚动视图照样能
       把手势抢走，一抢走就是 touchcancel，摇杆当场断。 */
 addEventListener('touchstart', e => {
+  touchDiag.start++;
+  /* preventDefault 必须在最前面决定并执行。
+     上一版把它放在末尾、还挂在 claimed 上，于是中间任何一处抛异常，
+     这一下触摸就完全没被接管：iOS 立刻拿去做自己的手势（长按弹「拷贝」、
+     滚动抢走后续 touchmove），摇杆当场废掉。
+     现在的顺序是：先判断该不该吃 → 立刻吃掉 → 剩下的逻辑无论怎么炸都不影响它。 */
+  let mine = false;
+  try {
+    if (state === 'play'){
+      const pre = e.changedTouches;
+      for (let i = 0; i < pre.length; i++){
+        if (!onUiElement(pre[i])){ mine = true; break; }
+      }
+    }
+  } catch (err){ noteTouchError(err); mine = (state === 'play'); }
+  if (mine){
+    touchDiag.claimed++;
+    if (e.cancelable){ e.preventDefault(); touchDiag.pd++; }
+  }
+  try { touchStartBody(e); } catch (err){ noteTouchError(err); }
+}, { passive:false });
+
+function touchStartBody(e){
   hideTouchGuide();
   syncTouches(e);
-  touchDiag.start++;
   if (state !== 'play') return;
   audioInit();
   const list = e.changedTouches;
-  let claimed = false;
   for (let i = 0; i < list.length; i++){
     const t = list[i];
     if (onUiElement(t)) continue;
-    claimed = true;
     const p = clientToCanvas(t.clientX, t.clientY);
     const slot = weaponSlotAt(p.x, p.y);
     const left = t.clientX < innerWidth/2;
@@ -944,25 +984,28 @@ addEventListener('touchstart', e => {
       ghostR.classList.add('fade');
     }
   }
-  if (claimed){ touchDiag.claimed++; if (e.cancelable){ e.preventDefault(); touchDiag.pd++; } }
-}, { passive:false });
+}
 addEventListener('touchmove', e => {
-  syncTouches(e);
   touchDiag.move++;
+  // 同样先吃后算：拖动一旦被 iOS 的滚动接管，后面就再也收不到 touchmove 了
+  if ((tMove.id !== null || tFire.id !== null) && e.cancelable) e.preventDefault();
+  try { touchMoveBody(e); } catch (err){ noteTouchError(err); }
+}, { passive:false });
+
+function touchMoveBody(e){
+  syncTouches(e);
   const list = e.changedTouches;
-  let claimed = false;
   for (let i = 0; i < list.length; i++){
     const t = list[i];
     if (t.identifier === tMove.id){
       tMove.vx = t.clientX - tMove.ox; tMove.vy = t.clientY - tMove.oy;
-      placeNub(nubL, tMove.vx, tMove.vy); claimed = true;
+      placeNub(nubL, tMove.vx, tMove.vy);
     } else if (t.identifier === tFire.id){
       tFire.vx = t.clientX - tFire.ox; tFire.vy = t.clientY - tFire.oy;
-      placeNub(nubR, tFire.vx, tFire.vy); claimed = true;
+      placeNub(nubR, tFire.vx, tFire.vy);
     }
   }
-  if (claimed && e.cancelable) e.preventDefault();
-}, { passive:false });
+}
 // 左半边那根手指抬起来时结算：没拖动过、按得也短，才算「点了一下武器栏」
 const TAP_SLOP = 14, TAP_MS = 400;
 function releaseTouches(e){
@@ -979,9 +1022,17 @@ function releaseTouches(e){
   }
   syncTouches(e);      // 兜一遍：万一 changedTouches 漏了谁，对账还能把它捡回来
 }
-addEventListener('touchend', e => { touchDiag.end++; releaseTouches(e); }, { passive:true });
+addEventListener('touchend', e => {
+  touchDiag.end++;
+  try { releaseTouches(e); } catch (err){ noteTouchError(err); resetSticks(); }
+}, { passive:true });
 // touchcancel 以前没接：系统手势/来电打断触摸时摇杆会卡在按下状态，人物一直往一个方向跑
-addEventListener('touchcancel', e => { touchDiag.cancel++; releaseTouches(e); }, { passive:true });
+addEventListener('touchcancel', e => {
+  touchDiag.cancel++;
+  // 被抢走时无论如何都要松开，否则人物会一直朝一个方向跑
+  try { releaseTouches(e); } catch (err){ noteTouchError(err); }
+  resetSticks();
+}, { passive:true });
 swapBtn.addEventListener('click', () => { if (state==='play') cycleWeapon(1); });
 ultBtn.addEventListener('click', () => { if (state==='play') requestUlt(); });
 pauseBtn.addEventListener('click', () => {
@@ -2986,7 +3037,8 @@ function drawPickup(c, p){
      · start 涨、move 不涨  → 拖动被宿主的滚动接管了
      · cancel 在涨          → 手势被中途抢走，正是摇杆断的那一下
      · pd < claim           → preventDefault 没生效（事件不可取消），治不住抢手势
-     · move.id 一直非空但 vec 不动 → 触点卡死了，对账那一步没兜住 */
+     · move.id 一直非空但 vec 不动 → 触点卡死了，对账那一步没兜住
+     · 顶上出现 ERR 那一行 → 直接就是答案，不用再猜（2026-08-21 加） */
 function drawTouchDiag(){
   if (!touchDebug) return;
   const L = [
@@ -3000,6 +3052,9 @@ function drawTouchDiag(){
       '  scale ' + viewScale.toFixed(2),
     'touch ' + isTouch + '  coarse ' + coarsePointer + '  pts ' + (navigator.maxTouchPoints || 0),
   ];
+  // 出过错就顶在最上面：计数正常但功能没反应时，答案基本都在这一行
+  const firstErr = touchDiag.err || window.__zwFirstError;
+  if (firstErr) L.unshift('ERR ' + firstErr);
   ctx.save();
   ctx.textAlign = 'left';
   ctx.font = 'bold 12px monospace';
