@@ -1,7 +1,11 @@
 <title>一小时做个游戏</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;700;900&family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<!-- 非阻塞加载：这份稿子现在也挂在公开站点上，国内手机取不到 Google Fonts 时
+     不该白屏等超时——先用系统里的宋体/黑体出字，拿到了再换上去。 -->
+<link rel="stylesheet" media="print" onload="this.media='all';this.onload=null"
+      href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;700;900&family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@700&family=Noto+Sans+SC:wght@400&display=swap"></noscript>
 <style>
 /* ===========================================================
    蛛网之上 · 设计令牌（取自 tiaozhuxiansheng.com 线上计算值）
@@ -638,7 +642,7 @@ a{color:var(--accent);text-decoration:none}
   <template class="note"><h4>开机三步</h4>
   <b>第 3 步是今天现场最大的坑，一定要停下来等所有人做完。</b>第一次用的人 90% 会卡在「输入框是灰的、以为坏了」。<br>
   <b>做法：</b>说完这三步，请所有人举手示意——<b>看到界面且输入框能打字的举手</b>。举手率不到七成就别往下走，先解决。<br>
-  <b>Key：</b>投影上给出，说清楚「今晚就作废，别存」。<br><b>今天是当天才通知的，没装上的人会比平常多——先别急着救，直接喊「没装上的举手，旁边的同学挪一下，两人一台」。</b>两人一台其实更好：一个人打字，一个人念屏幕上的字，反而不会冷场。</template>
+  <b>Key：</b>投影上给出，说清楚「今晚就作废，别存」。<br><b>当天才通知，而且电脑是自愿带的——没装上、没带电脑的人会不少，这是预期之内。</b>别急着救人，直接喊「没电脑的往带了电脑的旁边坐，两人一台」。两人一台其实更好：一个人打字，一个人念屏幕上的字，反而不会冷场。</template>
 </section>
 
 <section class="slide" data-sec="4" data-title="今天的 Key" data-at="28.5">
@@ -656,7 +660,7 @@ a{color:var(--accent);text-decoration:none}
       你们今天这一下午，加起来花不到几块钱。
     </div>
   </div>
-  <div class="slide-foot"><span>Key 只存在这台电脑的浏览器里，没有写进任何文件</span><span>按 K 清除</span></div>
+  <div class="slide-foot"><span>这个框是给主讲人用的 · Key 只存在你自己浏览器里，没有写进任何文件，也不会上传</span><span>按 K 清除</span></div>
   <template class="note"><h4>今天的 Key</h4>
   <b>讲之前先在这台电脑上点一下输入框、把 Key 粘进去</b>（它只存在本机浏览器里，不会进文件、不会上传）。<br>
   <b>三件事要说：</b>①不用注册不用充值 ②今晚作废，别存 ③想接着玩就自己去建一个，很便宜。<br>
@@ -1121,12 +1125,12 @@ a{color:var(--accent);text-decoration:none}
         <h2 class="t-mid">今晚就试一句话。</h2>
         <div class="lead" style="margin-top:26px">
           做出来了发给我，不管多丑。<br><br>
-          右边这个码是我的站。<strong>今天的预习单、那四句话、还有这个游戏的全部踩坑记录</strong>，都在上面。
+          右边这个码是我的站。<strong>这份稿子就挂在 /talk</strong>，今天说过的每一句、那四句话、还有这个游戏的全部踩坑记录，都在上面。
         </div>
         <div class="chips" style="margin-top:28px">
-          <span class="chip on">tiaozhuxiansheng.com</span>
+          <span class="chip on">tiaozhuxiansheng.com/talk</span>
+          <span class="chip">/dsh &nbsp;课前准备单</span>
           <span class="chip">B 站 · 跳蛛先生</span>
-          <span class="chip">DeepSeek Harness</span>
         </div>
       </div>
       <div style="display:flex;justify-content:flex-end">
@@ -1306,6 +1310,41 @@ function toggleClock(){
     clockEl.classList.remove('on', 'late');
   }
 }
+
+/* ============================================================
+   3b. 触摸翻页：这份稿子也公开挂在站点上，手机上没有键盘
+   ============================================================ */
+(function touchNav(){
+  var t0x = 0, t0y = 0, t0t = 0, moved = false;
+  function interactive(el){                       // 小游戏和输入框里的手势不抢
+    for (var n = el; n && n !== document; n = n.parentNode){
+      if (n.classList && (n.classList.contains('gamebox') || n.id === 'keybox')) return true;
+      if (n.tagName === 'INPUT' || n.tagName === 'BUTTON' || n.tagName === 'A') return true;
+    }
+    return false;
+  }
+  stage.addEventListener('touchstart', function(e){
+    if (e.touches.length !== 1) return;
+    t0x = e.touches[0].clientX; t0y = e.touches[0].clientY;
+    t0t = performance.now(); moved = false;
+  }, {passive:true});
+  stage.addEventListener('touchmove', function(e){
+    if (e.touches.length !== 1) return;
+    if (Math.abs(e.touches[0].clientX - t0x) > 12 || Math.abs(e.touches[0].clientY - t0y) > 12) moved = true;
+  }, {passive:true});
+  stage.addEventListener('touchend', function(e){
+    if (interactive(e.target)) return;
+    var t = e.changedTouches[0];
+    var dx = t.clientX - t0x, dy = t.clientY - t0y;
+    if (moved){                                    // 横向滑动翻页
+      if (Math.abs(dx) > 48 && Math.abs(dx) > Math.abs(dy) * 1.4) go(dx < 0 ? 1 : -1);
+      return;
+    }
+    if (performance.now() - t0t > 500) return;     // 长按不算
+    var r = stage.getBoundingClientRect();         // 轻点：右三分之二前进，左三分之一后退
+    go((t.clientX - r.left) / r.width > 0.34 ? 1 : -1);
+  }, {passive:true});
+})();
 
 /* ============================================================
    4b. 今天的临时 Key：只存本机浏览器，绝不写进文件

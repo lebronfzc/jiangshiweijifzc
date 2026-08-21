@@ -151,6 +151,41 @@ function toggleClock(){
 }
 
 /* ============================================================
+   3b. 触摸翻页：这份稿子也公开挂在站点上，手机上没有键盘
+   ============================================================ */
+(function touchNav(){
+  var t0x = 0, t0y = 0, t0t = 0, moved = false;
+  function interactive(el){                       // 小游戏和输入框里的手势不抢
+    for (var n = el; n && n !== document; n = n.parentNode){
+      if (n.classList && (n.classList.contains('gamebox') || n.id === 'keybox')) return true;
+      if (n.tagName === 'INPUT' || n.tagName === 'BUTTON' || n.tagName === 'A') return true;
+    }
+    return false;
+  }
+  stage.addEventListener('touchstart', function(e){
+    if (e.touches.length !== 1) return;
+    t0x = e.touches[0].clientX; t0y = e.touches[0].clientY;
+    t0t = performance.now(); moved = false;
+  }, {passive:true});
+  stage.addEventListener('touchmove', function(e){
+    if (e.touches.length !== 1) return;
+    if (Math.abs(e.touches[0].clientX - t0x) > 12 || Math.abs(e.touches[0].clientY - t0y) > 12) moved = true;
+  }, {passive:true});
+  stage.addEventListener('touchend', function(e){
+    if (interactive(e.target)) return;
+    var t = e.changedTouches[0];
+    var dx = t.clientX - t0x, dy = t.clientY - t0y;
+    if (moved){                                    // 横向滑动翻页
+      if (Math.abs(dx) > 48 && Math.abs(dx) > Math.abs(dy) * 1.4) go(dx < 0 ? 1 : -1);
+      return;
+    }
+    if (performance.now() - t0t > 500) return;     // 长按不算
+    var r = stage.getBoundingClientRect();         // 轻点：右三分之二前进，左三分之一后退
+    go((t.clientX - r.left) / r.width > 0.34 ? 1 : -1);
+  }, {passive:true});
+})();
+
+/* ============================================================
    4b. 今天的临时 Key：只存本机浏览器，绝不写进文件
    ============================================================ */
 var keyin = document.getElementById('keyin');
