@@ -193,6 +193,44 @@ pre.code .c{opacity:.55}
 #grid .gi:hover,#grid .gi:focus-visible{border-color:var(--accent);outline:none}
 #grid .gi .gn{font-family:var(--mono);font-size:11px;color:var(--accent);letter-spacing:.08em}
 #grid .gi .gt{font-family:var(--serif);font-size:15px;line-height:1.55;font-weight:700;color:var(--ink)}
+/* 章节导航栏：鼠标一动就出现，静止两秒半淡出。
+   读者会动鼠标，用遥控笔讲的人不会——所以投影上基本看不见它。
+   讲稿面板打开时（=演讲模式）直接不显示，免得两条东西在底部打架。 */
+#nav{position:fixed;left:50%;bottom:16px;transform:translateX(-50%) translateY(6px);z-index:41;
+  display:flex;align-items:center;gap:8px;padding:6px 8px;
+  background:var(--paper-2);border:1px solid var(--line);border-radius:999px;
+  box-shadow:0 1px 12px rgba(var(--shadow,30,24,60),.06);
+  opacity:0;visibility:hidden;pointer-events:none;
+  transition:opacity .25s ease,transform .25s ease,visibility 0s .25s}
+#nav.on{opacity:1;visibility:visible;pointer-events:auto;transform:translateX(-50%);
+  transition:opacity .25s ease,transform .25s ease,visibility 0s}
+#notes.on ~ #nav, #grid.on ~ #nav{display:none}
+.nav-secs{display:flex;gap:4px}
+.nav-secs button{font:inherit;font-family:var(--sans);font-size:12.5px;font-weight:400;
+  color:var(--ink-soft);background:transparent;border:0;border-radius:999px;
+  padding:6px 11px;cursor:pointer;white-space:nowrap;letter-spacing:.01em;
+  transition:background .18s ease,color .18s ease}
+.nav-secs button:hover{background:var(--paper-3);color:var(--ink)}
+.nav-secs button.cur{background:var(--accent-soft);color:var(--accent);font-weight:500}
+.nav-secs button .nn{font-family:var(--mono);font-size:10.5px;opacity:.6;margin-right:5px}
+.nav-arrow{font:inherit;font-size:17px;line-height:1;color:var(--ink-soft);background:transparent;
+  border:0;border-radius:999px;width:28px;height:28px;cursor:pointer;
+  transition:background .18s ease,color .18s ease}
+.nav-arrow:hover{background:var(--paper-3);color:var(--accent)}
+.nav-pos{font-family:var(--mono);font-size:11.5px;color:var(--ink-soft);font-variant-numeric:tabular-nums;
+  padding:0 8px;border-left:1px solid var(--line);border-right:1px solid var(--line);white-space:nowrap}
+.nav-pos b{color:var(--ink);font-weight:700}
+.nav-pos s{text-decoration:none;opacity:.4;margin:0 2px}
+/* 窄屏（手机看公开页）：9 个章节塞不下，只留前后箭头和页码；
+   跳章节交给 O 总览，翻页本来就能轻点 / 横滑。 */
+@media (max-width:760px){
+  #nav{bottom:10px;padding:4px 6px;gap:4px}
+  .nav-secs{display:none}
+  .nav-pos{border-left:0;border-right:0;padding:0 6px;font-size:12px}
+  .nav-arrow{width:34px;height:34px;font-size:19px}
+}
+#nav{max-width:calc(100vw - 24px)}
+@media print{#nav{display:none!important}}
 #help{display:none;position:fixed;left:16px;bottom:14px;z-index:41;font-family:var(--mono);font-size:11.5px;letter-spacing:.06em;
   color:var(--ink-soft);opacity:.5}
 #help.on{display:block}
@@ -1168,7 +1206,13 @@ a{color:var(--accent);text-decoration:none}
 <div id="clock"><span id="ctime">00:00</span><s>/</s><span id="ctarget">00:00</span></div>
 <div id="notes"></div>
 <div id="grid" role="dialog" aria-label="幻灯片总览"><div class="gh">总览 · 点一张跳过去 · ESC 关闭</div><div class="gg" id="gg"></div></div>
-<div id="help">→ / 滚轮 翻页 · F 全屏 · P 讲稿 · T 计时 · O 总览 · D 暗色</div>
+<nav id="nav" aria-label="章节导航">
+  <button class="nav-arrow" id="navPrev" aria-label="上一页">‹</button>
+  <div class="nav-secs" id="navSecs"></div>
+  <span class="nav-pos"><b id="navNow">1</b><s>/</s><span id="navAll">1</span></span>
+  <button class="nav-arrow" id="navNext" aria-label="下一页">›</button>
+</nav>
+<div id="help">→ / 滚轮 翻页 · F 全屏 · P 讲稿 · T 计时 · O 总览 · N 导航栏 · D 暗色</div>
 
 <script>
 (function(){
@@ -1227,6 +1271,7 @@ function show(n, opts){
   webCanvas.classList.toggle('show', s.classList.contains('opener') || idx === 0);
   helpEl.classList.toggle('on', idx === 0);
   renderNote(s);
+  syncNav();
   syncMinis(s);
   if (!opts || !opts.silent) { try { history.replaceState(null, '', '#' + (idx + 1)); } catch(e){} }
 }
@@ -1279,6 +1324,7 @@ document.addEventListener('keydown', function(e){
   else if (lower === 'o'){ e.preventDefault(); toggleGrid(); }
   else if (lower === 'd'){ e.preventDefault(); toggleTheme(); }
   else if (lower === 'k'){ e.preventDefault(); clearKey(); }
+  else if (lower === 'n'){ e.preventDefault(); toggleNav(); }
 });
 
 function toggleFull(){
@@ -1432,6 +1478,66 @@ if (keyin){
 function clearKey(){
   if (keyin) keyin.value = '';
   try { localStorage.removeItem(KEY_STORE); } catch(e){}
+}
+
+/* ============================================================
+   4c. 章节导航栏
+   ------------------------------------------------------------
+   跟 O 总览分工不同：总览是「停下来找一页」，导航栏是「一直知道自己在哪」。
+   它主要服务公开页的读者；讲的时候用遥控笔、不动鼠标，所以投影上基本不出现。
+   ============================================================ */
+var navEl = document.getElementById('nav');
+var navSecs = document.getElementById('navSecs');
+var navNow = document.getElementById('navNow');
+var navPinned = false, navTimer = null;
+
+(function buildNav(){
+  document.getElementById('navAll').textContent = slides.length;
+
+  // 每段取它的开场页当落点；没有开场页的（封面 / 运行表）落到第一页
+  var order = [], first = {};
+  slides.forEach(function(s, i){
+    var k = s.getAttribute('data-sec') || '-1';
+    if (!(k in first)){ first[k] = i; order.push(k); }
+    if (s.classList.contains('opener')) first[k] = i;   // 有开场页就用开场页
+  });
+
+  order.forEach(function(k){
+    var target = first[k];
+    var title = slides[target].getAttribute('data-title') || '';
+    var m = title.match(/^(\d+)\s+(.*)$/);            // 「04 现在换你」→ 04 + 现在换你
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.innerHTML = m ? '<span class="nn">' + m[1] + '</span>' + m[2] : '开场';
+    b.setAttribute('data-sec', k);
+    b.title = '跳到「' + (m ? m[2] : '开场') + '」';
+    b.addEventListener('click', function(){ show(target); b.blur(); pokeNav(); });
+    navSecs.appendChild(b);
+  });
+})();
+
+function syncNav(){
+  var k = slides[idx].getAttribute('data-sec') || '-1';
+  var bs = navSecs.children;
+  for (var i = 0; i < bs.length; i++)
+    bs[i].classList.toggle('cur', bs[i].getAttribute('data-sec') === k);
+  navNow.textContent = idx + 1;
+}
+
+function pokeNav(){                       // 有人动鼠标 / 摸屏幕就露出来，闲下来自己收回去
+  navEl.classList.add('on');
+  clearTimeout(navTimer);
+  if (!navPinned) navTimer = setTimeout(function(){ navEl.classList.remove('on'); }, 2600);
+}
+window.addEventListener('mousemove', pokeNav, {passive:true});
+window.addEventListener('touchend', pokeNav, {passive:true});
+document.getElementById('navPrev').addEventListener('click', function(e){ go(-1); e.currentTarget.blur(); pokeNav(); });
+document.getElementById('navNext').addEventListener('click', function(e){ go(1);  e.currentTarget.blur(); pokeNav(); });
+
+function toggleNav(){                     // N：钉住 / 收起
+  navPinned = !navPinned;
+  clearTimeout(navTimer);
+  navEl.classList.toggle('on', navPinned);
 }
 
 /* ============================================================
@@ -1683,6 +1789,8 @@ function syncMinis(slide){
    8. 启动
    ============================================================ */
 if (/[?&]theme=dark/.test(location.search)) document.documentElement.setAttribute('data-theme','dark');
+// 开场先亮一下再收回去：不这么做，读者根本不知道底下有这条栏
+setTimeout(pokeNav, 400);
 var hash = parseInt((location.hash || '').replace('#', ''), 10);
 show(isFinite(hash) && hash > 0 ? hash - 1 : 0, { silent: true });
 window.addEventListener('beforeprint', function(){ slides.forEach(function(s){ s.classList.add('on'); }); });

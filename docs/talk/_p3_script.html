@@ -55,6 +55,7 @@ function show(n, opts){
   webCanvas.classList.toggle('show', s.classList.contains('opener') || idx === 0);
   helpEl.classList.toggle('on', idx === 0);
   renderNote(s);
+  syncNav();
   syncMinis(s);
   if (!opts || !opts.silent) { try { history.replaceState(null, '', '#' + (idx + 1)); } catch(e){} }
 }
@@ -107,6 +108,7 @@ document.addEventListener('keydown', function(e){
   else if (lower === 'o'){ e.preventDefault(); toggleGrid(); }
   else if (lower === 'd'){ e.preventDefault(); toggleTheme(); }
   else if (lower === 'k'){ e.preventDefault(); clearKey(); }
+  else if (lower === 'n'){ e.preventDefault(); toggleNav(); }
 });
 
 function toggleFull(){
@@ -260,6 +262,66 @@ if (keyin){
 function clearKey(){
   if (keyin) keyin.value = '';
   try { localStorage.removeItem(KEY_STORE); } catch(e){}
+}
+
+/* ============================================================
+   4c. 章节导航栏
+   ------------------------------------------------------------
+   跟 O 总览分工不同：总览是「停下来找一页」，导航栏是「一直知道自己在哪」。
+   它主要服务公开页的读者；讲的时候用遥控笔、不动鼠标，所以投影上基本不出现。
+   ============================================================ */
+var navEl = document.getElementById('nav');
+var navSecs = document.getElementById('navSecs');
+var navNow = document.getElementById('navNow');
+var navPinned = false, navTimer = null;
+
+(function buildNav(){
+  document.getElementById('navAll').textContent = slides.length;
+
+  // 每段取它的开场页当落点；没有开场页的（封面 / 运行表）落到第一页
+  var order = [], first = {};
+  slides.forEach(function(s, i){
+    var k = s.getAttribute('data-sec') || '-1';
+    if (!(k in first)){ first[k] = i; order.push(k); }
+    if (s.classList.contains('opener')) first[k] = i;   // 有开场页就用开场页
+  });
+
+  order.forEach(function(k){
+    var target = first[k];
+    var title = slides[target].getAttribute('data-title') || '';
+    var m = title.match(/^(\d+)\s+(.*)$/);            // 「04 现在换你」→ 04 + 现在换你
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.innerHTML = m ? '<span class="nn">' + m[1] + '</span>' + m[2] : '开场';
+    b.setAttribute('data-sec', k);
+    b.title = '跳到「' + (m ? m[2] : '开场') + '」';
+    b.addEventListener('click', function(){ show(target); b.blur(); pokeNav(); });
+    navSecs.appendChild(b);
+  });
+})();
+
+function syncNav(){
+  var k = slides[idx].getAttribute('data-sec') || '-1';
+  var bs = navSecs.children;
+  for (var i = 0; i < bs.length; i++)
+    bs[i].classList.toggle('cur', bs[i].getAttribute('data-sec') === k);
+  navNow.textContent = idx + 1;
+}
+
+function pokeNav(){                       // 有人动鼠标 / 摸屏幕就露出来，闲下来自己收回去
+  navEl.classList.add('on');
+  clearTimeout(navTimer);
+  if (!navPinned) navTimer = setTimeout(function(){ navEl.classList.remove('on'); }, 2600);
+}
+window.addEventListener('mousemove', pokeNav, {passive:true});
+window.addEventListener('touchend', pokeNav, {passive:true});
+document.getElementById('navPrev').addEventListener('click', function(e){ go(-1); e.currentTarget.blur(); pokeNav(); });
+document.getElementById('navNext').addEventListener('click', function(e){ go(1);  e.currentTarget.blur(); pokeNav(); });
+
+function toggleNav(){                     // N：钉住 / 收起
+  navPinned = !navPinned;
+  clearTimeout(navTimer);
+  navEl.classList.toggle('on', navPinned);
 }
 
 /* ============================================================
@@ -511,6 +573,8 @@ function syncMinis(slide){
    8. 启动
    ============================================================ */
 if (/[?&]theme=dark/.test(location.search)) document.documentElement.setAttribute('data-theme','dark');
+// 开场先亮一下再收回去：不这么做，读者根本不知道底下有这条栏
+setTimeout(pokeNav, 400);
 var hash = parseInt((location.hash || '').replace('#', ''), 10);
 show(isFinite(hash) && hash > 0 ? hash - 1 : 0, { silent: true });
 window.addEventListener('beforeprint', function(){ slides.forEach(function(s){ s.classList.add('on'); }); });
