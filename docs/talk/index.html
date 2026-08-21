@@ -1168,7 +1168,7 @@ a{color:var(--accent);text-decoration:none}
 <div id="clock"><span id="ctime">00:00</span><s>/</s><span id="ctarget">00:00</span></div>
 <div id="notes"></div>
 <div id="grid" role="dialog" aria-label="幻灯片总览"><div class="gh">总览 · 点一张跳过去 · ESC 关闭</div><div class="gg" id="gg"></div></div>
-<div id="help">→ 翻页 · F 全屏 · P 讲稿 · T 计时 · O 总览 · D 暗色</div>
+<div id="help">→ / 滚轮 翻页 · F 全屏 · P 讲稿 · T 计时 · O 总览 · D 暗色</div>
 
 <script>
 (function(){
@@ -1355,6 +1355,67 @@ function toggleClock(){
     var r = stage.getBoundingClientRect();         // 轻点：右三分之二前进，左三分之一后退
     go((t.clientX - r.left) / r.width > 0.34 ? 1 : -1);
   }, {passive:true});
+})();
+
+/* ============================================================
+   3c. 滚轮翻页
+   ------------------------------------------------------------
+   难点是触控板：一次两指滑动会连发几十个 wheel 事件，直接 go(±1) 会一下翻十几页。
+   所以按「累积到阈值才翻一次 + 翻完进冷却」来做，鼠标滚轮一个档位刚好一页。
+   讲稿面板、总览这些自己能滚的地方，滚轮让给它们。
+   ============================================================ */
+(function wheelNav(){
+  // 真滚轮和触控板得分开对待，不然必然顾此失彼：
+  //   · 真滚轮：一次事件的 delta 就有 ~100，一档翻一页，只加很短的冷却，连滚能连翻
+  //   · 触控板：一次两指滑动连发几十个小 delta，还带惯性余波，
+  //     所以累积到阈值翻一页之后「下锁」，必须等这次滑动彻底停下来才重新武装
+  var NOTCH = 80;      // 单次事件超过这个量级 → 判定为真滚轮的一档
+  var COOL  = 140;     // 真滚轮翻页后的冷却
+  var STEP  = 110;     // 触控板累积到这个量算一页
+  var GAP   = 260;     // 静默超过这么久 = 这次手势结束，重新武装
+  var acc = 0, last = 0, lockUntil = 0, armed = true;
+
+  function scrollableUnder(el){          // 指针底下有没有「自己能滚」的容器
+    for (var n = el; n && n.nodeType === 1 && n !== document.body; n = n.parentNode){
+      if (n.classList && n.classList.contains('gamebox')) return n;   // 小游戏不抢
+      var cs = getComputedStyle(n);
+      if (/(auto|scroll)/.test(cs.overflowY) && n.scrollHeight > n.clientHeight + 1) return n;
+      if (/(auto|scroll)/.test(cs.overflowX) && n.scrollWidth > n.clientWidth + 1) return n;
+    }
+    return null;
+  }
+
+  window.addEventListener('wheel', function(e){
+    if (gridEl.classList.contains('on')) return;   // 总览开着时，滚轮归总览
+    if (scrollableUnder(e.target)) return;
+
+    // deltaMode: 0=像素 1=行 2=页。行/页模式只可能来自真滚轮（触控板一律发像素），
+    // 所以不去猜量级，直接按「一档」处理——火狐一档是 deltaY=3 行，换算过来才 48，
+    // 用像素阈值判会被误当成触控板，一档翻不动页。
+    var k = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
+    var dy = e.deltaY * k, dx = e.deltaX * k;
+    var d = Math.abs(dy) >= Math.abs(dx) ? dy : dx;   // 取幅度大的那个轴
+    if (!d) return;
+
+    e.preventDefault();                 // 顺带挡掉触控板横滑触发的「后退」手势
+
+    var now = performance.now();
+    if (now - last > GAP) { acc = 0; armed = true; }   // 新手势
+    last = now;
+
+    if (e.deltaMode !== 0 || Math.abs(d) >= NOTCH){   // —— 真滚轮
+      if (now < lockUntil) return;
+      go(d > 0 ? 1 : -1);               // 向下/向右 = 下一页
+      lockUntil = now + COOL; acc = 0; armed = true;
+      return;
+    }
+
+    if (!armed) return;                 // —— 触控板：这次滑动已经翻过了，等它停
+    acc += d;
+    if (Math.abs(acc) < STEP) return;
+    go(acc > 0 ? 1 : -1);
+    acc = 0; armed = false;
+  }, {passive:false});
 })();
 
 /* ============================================================
