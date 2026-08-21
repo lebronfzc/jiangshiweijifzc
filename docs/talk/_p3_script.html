@@ -19,7 +19,8 @@ fit();
    2. 幻灯片与段落时间预算
    ============================================================ */
 var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
-var SEC_SPAN = { '-1':[0,2], '0':[2,7], '1':[7,14], '2':[14,22], '3':[22,37], '4':[37,50], '5':[50,55], '6':[55,60] };
+var SEC_SPAN = { '-1':[0,2], '0':[2,6], '1':[6,12], '2':[12,18], '3':[18,25],
+                 '4':[25,37], '5':[37,49], '6':[49,54], '7':[54,60] };
 
 // 每张片子的"该讲完的时刻"：在本段区间内按序号均分
 (function assignTargets(){
@@ -31,7 +32,9 @@ var SEC_SPAN = { '-1':[0,2], '0':[2,7], '1':[7,14], '2':[14,22], '3':[22,37], '4
   Object.keys(bySec).forEach(function(k){
     var span = SEC_SPAN[k] || [0,60], list = bySec[k], n = list.length;
     list.forEach(function(s, i){
-      s._at = span[0] + (span[1] - span[0]) * (i + 1) / n;   // 分钟
+      var fixed = parseFloat(s.getAttribute('data-at'));     // 单页可显式覆盖
+      s._at = isFinite(fixed) ? fixed
+            : span[0] + (span[1] - span[0]) * (i + 1) / n;   // 否则段内均分
     });
   });
 })();
@@ -59,8 +62,11 @@ function go(d){ show(idx + d); }
 
 function renderNote(s){
   var t = s.querySelector('template.note');
-  notesEl.innerHTML = t ? t.innerHTML
-    : '<h4>' + (s.getAttribute('data-title') || '') + '</h4>（这一页没有讲稿备注）';
+  var at = mmss((s._at || 0) * 60);
+  var badge = '<span class="note-at">' + (idx + 1) + ' / ' + slides.length +
+              ' &nbsp;·&nbsp; 该讲到 ' + at + '</span>';
+  notesEl.innerHTML = badge + (t ? t.innerHTML
+    : '<h4>' + (s.getAttribute('data-title') || '') + '</h4>（这一页没有讲稿备注）');
 }
 
 /* ============================================================
@@ -69,6 +75,10 @@ function renderNote(s){
 function inGame(){
   var a = document.activeElement;
   return a && a.classList && a.classList.contains('mini');
+}
+function inField(){
+  var a = document.activeElement;
+  return a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable);
 }
 document.addEventListener('keydown', function(e){
   var k = e.key;
@@ -82,8 +92,8 @@ document.addEventListener('keydown', function(e){
     if (inGame()) { document.activeElement.blur(); return; }
   }
 
-  // 画面被点中（在玩内嵌小游戏）时，把方向键和字母让给游戏
-  if (inGame()) return;
+  // 在玩内嵌小游戏、或者正在往输入框里打字时，把方向键和字母让出去
+  if (inGame() || inField()) return;
 
   if (k === 'ArrowRight' || k === 'ArrowDown' || k === 'Enter'){ e.preventDefault(); go(1); return; }
   if (k === 'ArrowLeft' || k === 'ArrowUp'){ e.preventDefault(); go(-1); return; }
@@ -96,6 +106,7 @@ document.addEventListener('keydown', function(e){
   else if (lower === 't'){ e.preventDefault(); toggleClock(); }
   else if (lower === 'o'){ e.preventDefault(); toggleGrid(); }
   else if (lower === 'd'){ e.preventDefault(); toggleTheme(); }
+  else if (lower === 'k'){ e.preventDefault(); clearKey(); }
 });
 
 function toggleFull(){
@@ -137,6 +148,22 @@ function toggleClock(){
     clearInterval(tTimer);
     clockEl.classList.remove('on', 'late');
   }
+}
+
+/* ============================================================
+   4b. 今天的临时 Key：只存本机浏览器，绝不写进文件
+   ============================================================ */
+var keyin = document.getElementById('keyin');
+var KEY_STORE = 'dsh-key-today';
+if (keyin){
+  try { keyin.value = localStorage.getItem(KEY_STORE) || ''; } catch(e){}
+  keyin.addEventListener('input', function(){
+    try { localStorage.setItem(KEY_STORE, keyin.value); } catch(e){}
+  });
+}
+function clearKey(){
+  if (keyin) keyin.value = '';
+  try { localStorage.removeItem(KEY_STORE); } catch(e){}
 }
 
 /* ============================================================

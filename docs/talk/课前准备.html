@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>课前准备 · 明天分享会</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@700&family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+/* 蛛网之上设计令牌（同演示稿）。这一页是给微信群截长图用的，固定浅色。 */
+:root{
+  --paper:#faf8f3; --paper-2:#ffffff; --paper-3:#f1ece2;
+  --ink:#1b1813; --ink-soft:#6b6357; --line:#e7dfd0;
+  --accent:#6d4aff; --accent-soft:#efeaff;
+  --serif:"Songti SC","Noto Serif SC","Source Han Serif SC",STSong,SimSun,Georgia,serif;
+  --sans:"PingFang SC","Noto Sans SC","Source Han Sans SC","Microsoft YaHei",system-ui,sans-serif;
+  --mono:"JetBrains Mono","SF Mono",Consolas,"Cascadia Mono",monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);
+  font-weight:300;line-height:1.85;-webkit-font-smoothing:antialiased}
+.page{max-width:880px;margin:0 auto;padding:56px 52px 64px;background:var(--paper)}
+
+.eyebrow{font-family:var(--mono);font-size:12.5px;letter-spacing:.12em;color:var(--accent);font-weight:700}
+h1{font-family:var(--serif);font-weight:700;font-size:42px;line-height:1.42;letter-spacing:.03em;margin:14px 0 0}
+.intro{font-size:17px;line-height:1.9;color:var(--ink-soft);margin-top:22px}
+.intro strong{color:var(--ink);font-weight:500}
+hr{border:0;border-top:1px solid var(--line);margin:36px 0}
+
+.need{display:flex;gap:10px;flex-wrap:wrap;margin-top:20px}
+.need span{font-family:var(--mono);font-size:12.5px;letter-spacing:.04em;border:1px solid var(--line);
+  border-radius:999px;padding:7px 15px;color:var(--ink-soft);background:var(--paper-2)}
+
+.step{display:grid;grid-template-columns:46px 1fr;gap:20px;margin:32px 0 0;align-items:start}
+.step .n{font-family:var(--mono);font-size:14px;font-weight:700;color:var(--accent);letter-spacing:.06em;padding-top:7px}
+.step h2{font-family:var(--serif);font-weight:700;font-size:24px;line-height:1.5;margin:0 0 10px;letter-spacing:.02em}
+.step h2 small{font-family:var(--sans);font-size:13.5px;font-weight:300;color:var(--ink-soft);letter-spacing:0;margin-left:8px}
+.step p{margin:0 0 10px;font-size:16px;color:var(--ink-soft)}
+.step p strong,.note strong{color:var(--ink);font-weight:500}
+.step ul{margin:8px 0 12px;padding-left:20px;font-size:16px;color:var(--ink-soft)}
+.step li{margin:5px 0}
+b.hot{color:var(--accent);font-weight:700}
+
+code.cmd{display:block;font-family:var(--mono);font-size:19px;font-weight:700;color:var(--accent);
+  background:var(--paper-3);border:1px solid var(--line);border-radius:8px;padding:15px 20px;margin:12px 0 14px;
+  word-break:break-all}
+code.inl{font-family:var(--mono);font-size:.92em;font-weight:500;background:var(--paper-3);
+  border:1px solid var(--line);border-radius:5px;padding:1px 7px;color:var(--ink)}
+
+.note{background:var(--accent-soft);border-radius:9px;padding:16px 20px;font-size:15.5px;
+  line-height:1.82;color:var(--ink);margin:12px 0 0}
+.ok{font-family:var(--serif);font-weight:700;font-size:21px;color:var(--accent);margin:14px 0 8px;letter-spacing:.02em}
+
+.fix{border:1px solid var(--line);border-radius:10px;background:var(--paper-2);padding:8px 24px 20px;margin-top:18px}
+.fix h3{font-family:var(--serif);font-size:17px;font-weight:700;margin:20px 0 4px;letter-spacing:.02em}
+.fix p{margin:0;font-size:15.5px;color:var(--ink-soft)}
+.fix .arrow{color:var(--accent);font-family:var(--mono);font-weight:700;margin-right:6px}
+
+.bring{font-size:18px;line-height:1.95;color:var(--ink-soft);margin-top:14px}
+.bring strong{color:var(--ink);font-weight:500}
+footer{margin-top:44px;padding-top:22px;border-top:1px solid var(--line);
+  font-size:14px;line-height:1.85;color:var(--ink-soft)}
+@media (max-width:640px){ .page{padding:36px 22px 48px} h1{font-size:31px} .step{grid-template-columns:34px 1fr;gap:12px} }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="eyebrow">课前准备 · 今晚 15 分钟</div>
+  <h1>明天有一段，<br>是你自己动手做一个能玩的小游戏。</h1>
+
+  <div class="intro">
+    场地的网撑不住三十个人同时装东西，所以<strong>装的部分今晚在家做完</strong>，明天到场只用打字。<br>
+    全程<strong>不用注册、不用充值、不用会写代码</strong>。
+  </div>
+
+  <div class="need"><span>Windows / Mac 都行</span><span>能上网</span><span>15 分钟</span></div>
+
+  <hr>
+
+  <div class="step">
+    <div class="n">01</div>
+    <div>
+      <h2>装 Node.js<small>约 5 分钟</small></h2>
+      <p>打开 <strong>nodejs.org</strong>，下载 <strong>LTS</strong> 版本。</p>
+      <ul>
+        <li>Windows 选 <strong>x64</strong></li>
+        <li>Mac 如果是 M1 及以后的芯片，选 <strong>ARM64</strong></li>
+        <li>一路点下一步，<b class="hot">安装选项里「加入 PATH」那个勾不要取消</b></li>
+      </ul>
+      <div class="note">版本必须是 <strong>22.19 以上</strong>。直接下最新的 LTS 就对了，不用纠结。</div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="n">02</div>
+    <div>
+      <h2>装 dsh<small>约 2 分钟</small></h2>
+      <p>先打开终端 —— <strong>Windows</strong> 按 <code class="inl">Win + R</code>，输入 <code class="inl">终端</code>，回车；
+      <strong>Mac</strong> 搜索「终端」打开。</p>
+      <p>把下面这行粘进去，回车。等一两分钟，中间刷一堆字是正常的：</p>
+      <code class="cmd">npm i -g @deepseek-ai/dsh</code>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="n">03</div>
+    <div>
+      <h2>让它跑起来，看一眼<small>约 3 分钟</small></h2>
+      <p>还在那个终端窗口里，敲：</p>
+      <code class="cmd">dsh web</code>
+      <p>然后浏览器打开 <code class="inl">http://127.0.0.1:3080</code>（多数电脑会自己弹出来）。</p>
+      <div class="ok">看到界面，这一步就算成功了。</div>
+      <p><b class="hot">别关那个终端窗口</b> —— 关了网页就断。它不是装完就常驻的服务，下次要用再敲一次 <code class="inl">dsh web</code>。</p>
+      <div class="note">
+        它会问你要 <strong>API Key</strong>。<strong>明天现场我发，你今晚不用注册、也不用充值。</strong><br>
+        如果我已经在群里发了 Key，就现在填上，随便打一句「你好」试试 —— 能回话，就百分百没问题了。
+      </div>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="n">04</div>
+    <div>
+      <h2>建一个空文件夹<small>10 秒</small></h2>
+      <p>随便哪个盘，新建一个<strong>空文件夹</strong>，比如 <code class="inl">D:\我的游戏</code>。</p>
+      <p>明天第一件事就是把它交给 dsh，所以<strong>记住它在哪</strong>。</p>
+    </div>
+  </div>
+
+  <hr>
+
+  <h2 style="font-family:var(--serif);font-size:26px;font-weight:700;letter-spacing:.03em;margin:0">装不上？大概率是这三个</h2>
+  <div class="fix">
+    <h3>敲 dsh 说「不是命令 / command not found」</h3>
+    <p><span class="arrow">→</span>关掉终端窗口，<strong>重新开一个</strong>再敲。装完要重开窗口，路径才会刷新。</p>
+    <h3>提示 Node 版本过低</h3>
+    <p><span class="arrow">→</span>敲 <code class="inl">node -v</code> 看一眼。低于 22.19 就回 nodejs.org 重下 LTS 覆盖安装，装完记得重开终端。</p>
+    <h3>npm 那一步刷红字</h3>
+    <p><span class="arrow">→</span>先原样再跑一遍，多数是网络抖。还不行就先跳过 —— 明天带电脑来，现场两人一台，不影响你参加。</p>
+  </div>
+
+  <hr>
+
+  <h2 style="font-family:var(--serif);font-size:26px;font-weight:700;letter-spacing:.03em;margin:0">明天带什么</h2>
+  <div class="bring">
+    <strong>电脑</strong> ＋ <strong>充电器</strong>（很重要，两小时不插电会心慌）＋ <strong>手机</strong>（开场要扫个码玩一局）。<br>
+    没搞定也<strong>照常来</strong> —— 现场有兜底，不会让你干坐着。
+  </div>
+
+  <footer>
+    装的这个东西叫 <strong style="color:var(--ink);font-weight:500">DeepSeek Harness</strong>，DeepSeek 官方开源的编程助手，
+    跑在你自己电脑上，文件都在本地。明天我们就用它。
+  </footer>
+
+</div>
+</body>
+</html>
