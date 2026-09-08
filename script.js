@@ -38,7 +38,25 @@ function qualityCap(){
 // 多设备环境判断（参照 Toy 多设备自适应指南：组合 pointer/hover/visualViewport，不只看 UA）
 const coarsePointer = matchMedia('(pointer: coarse)').matches;
 const isTouch = coarsePointer || ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
-function isPhone(){ return Math.min(innerWidth, innerHeight) <= 540; }
+/* 容器（B站 App）报回来的状态。声明提到这儿，是因为下面的 isPhone 要读它，
+   而 const 有暂时性死区——留在本节原地的话，将来谁在这上面加一句顶层调用就是开局白屏。
+   怎么填、怎么用见下面「容器状态」一节。 */
+const container = {
+  ok: false,                 // 三个 API 齐了才算这条路通
+  deviceType: '',            // phone / tablet / desktop / unknown
+  orientation: '',           // portrait / landscape
+  immersive: false,
+  safeArea: { top:0, right:0, bottom:0, left:0 },
+  pending: '',               // 正在飞的那个请求，防止同一个请求叠着发
+  unsub: null,
+};
+
+// 手机判定：容器说了算，说不上来才退回按尺寸猜（540 这条线在开小窗的 PC 上会误伤）
+function isPhone(){
+  if (container.deviceType === 'phone') return true;
+  if (container.deviceType === 'tablet' || container.deviceType === 'desktop') return false;
+  return Math.min(innerWidth, innerHeight) <= 540;
+}
 
 // 视口比例跟着容器走：横屏（含 PC）保持经典 960×640；竖屏换成等面积的竖版视口。
 // 竖屏因此是「能正常玩的另一种版式」，不再需要把人挡在「请旋转到横屏」后面——
@@ -110,6 +128,7 @@ function hideRotateTip(){
 function checkOrient(){
   if (innerHeight <= innerWidth){ hideRotateTip(); return; }
   if (rotateTipShown || !isPhone() || localStoreGet(ROTATE_KEY) === 'off') return;
+  refreshRotateCta();          // App 内能一键转屏，那这条提示就该是个按钮，而不是一句话
   rotateTipShown = true;
   rotateTip.classList.remove('hidden');
   rotateTipTimer = setTimeout(hideRotateTip, 6500);
@@ -122,6 +141,174 @@ function onViewportChange(){ fit(); checkOrient(); }
 addEventListener('resize', onViewportChange);
 addEventListener('orientationchange', onViewportChange);
 if (window.visualViewport) visualViewport.addEventListener('resize', onViewportChange);
+
+/* ========================================================
+   容器状态（Toy JS SDK · 2026-08-27 新上线的一组能力）
+   在这之前，「App 到底把我们塞进了多大一块地方」只能靠 innerWidth/innerHeight 猜，
+   猜错的代价是实打实的两处：
+     · B 站 App 内嵌 WebView 里 env(safe-area-inset-*) 读出来是 0，
+       顶部栏照样压着画面，左上角的暂停键就藏在它下面；
+     · WebView 常锁竖屏，「横过来视野更宽」这句话对转不过来的人等于废话
+       （见上面 applyViewport 的注释——竖屏版式就是为这批人做的）。
+   现在容器自己会说：设备类型、可用尺寸、横竖屏、沉浸态、安全区，也能反过来请求它切。
+
+   三条铁律，都是这套 API 的形状逼出来的：
+   1. 每一个能力都可能不在——站外浏览器直接抛 unsupported，老版本 App 回 103，
+      刚支持 Toy 的鸿蒙版能力集也未必铺全。而 index.html 顶上那层错误浮层
+      会把未捕获的 rejection 糊在所有人屏幕上，所以这一节每一次调用都得自己接住：
+      不支持是降级，不是报错。
+   2. onContainerChange 在不支持的环境里是「同步抛」，不是返回一个 rejected promise，
+      只挂 .catch() 接不住它。
+   3. 切没切成，以 onContainerChange 回调里的实际状态为准，不能看 setContainerMode
+      有没有 resolve——平台的接入提示专门强调了这条，这里照做。
+   ======================================================== */
+const SA_SIDES = ['top', 'right', 'bottom', 'left'];
+let containerWaiters = [];
+const rotateGo = document.getElementById('rotateGo');
+const rotateText = rotateTip ? rotateTip.querySelector('.rot-text') : null;
+const screenBtns = [document.getElementById('btnScreen'), document.getElementById('btnScreen2')];
+
+// 安全区交给 CSS 去合并：所有内边距都写成 max(env(...), var(--sa-*))，谁大听谁的。
+// 站外靠 env()，App 内靠容器给的数，两条路共用一套样式。
+function applyContainerSafeArea(sa){
+  for (const side of SA_SIDES){
+    const v = Math.max(0, Math.round(Number(sa && sa[side]) || 0));
+    container.safeArea[side] = v;
+    document.documentElement.style.setProperty('--sa-' + side, v + 'px');
+  }
+}
+
+// 唯一的事实源：容器报回来什么就是什么，自己想要什么不算数
+function applyContainerState(st){
+  if (!st || typeof st !== 'object') return;
+  if (st.deviceType) container.deviceType = st.deviceType;
+  if (st.orientation) container.orientation = st.orientation;
+  if (typeof st.immersive === 'boolean') container.immersive = st.immersive;
+  if (st.safeArea) applyContainerSafeArea(st.safeArea);
+  onViewportChange();        // 安全区、可用尺寸、横竖屏，改哪一样都要重排一次
+  refreshScreenBtns();
+  const waiters = containerWaiters;
+  containerWaiters = [];
+  for (const w of waiters) w();
+}
+
+function containerMatches(req){
+  return (req.orientation === undefined || container.orientation === req.orientation)
+      && (req.immersive   === undefined || container.immersive   === req.immersive);
+}
+
+/* 「切没切成」的判据在这儿：容器回调里的实际状态。
+   三种收场，且一定有一种会到：回调追上了（true）、请求当场被拒（false）、
+   等够 ms 再主动读一次容器下结论。不留「永远没结论」这一档——
+   否则一发石沉大海就能把转屏按钮永久钉在 disabled 上。 */
+function watchContainerMode(req, ms){
+  let settle;
+  const promise = new Promise(resolve => { settle = resolve; });
+  const probe = () => { if (containerMatches(req)) finish(true); };
+  const timer = setTimeout(() => {
+    const t = toySdk();
+    if (!t || typeof t.getContainerState !== 'function'){ finish(false); return; }
+    t.getContainerState().then(
+      st => { applyContainerState(st); finish(containerMatches(req)); },
+      () => finish(false));
+  }, ms);
+  function finish(ok){
+    clearTimeout(timer);
+    containerWaiters = containerWaiters.filter(w => w !== probe);
+    settle(ok);                    // Promise 自带一次性，重复 finish 不会有第二个结论
+  }
+  containerWaiters.push(probe);
+  return { promise, giveUp: () => finish(false) };
+}
+
+function requestContainerMode(req){
+  if (!container.ok) return Promise.resolve(false);
+  if (containerMatches(req)) return Promise.resolve(true);
+  const t = toySdk();
+  if (!t) return Promise.resolve(false);
+  const key = JSON.stringify(req);
+  if (container.pending === key) return Promise.resolve(false);   // 同一个请求别叠着发
+  container.pending = key;
+  // 先架好「等状态变过来」这一路，再下发请求：setContainerMode 只负责把请求送出去，
+  // 它 resolve 了也不代表切成了（平台的接入提示专门强调这一条），所以不看它的返回值，
+  // 只在它明确抛错时提前收摊——那种情况下状态肯定不会变了，没必要再等满。
+  const watch = watchContainerMode(req, 1500);
+  Promise.resolve().then(() => t.setContainerMode(req)).catch(() => watch.giveUp());
+  return watch.promise.then(ok => {
+    if (container.pending === key) container.pending = '';
+    return ok;
+  });
+}
+
+/* 沉浸模式在两种情况下开：真开打时（同样一块屏能多看见一截战场），
+   以及玩家自己选了横屏时（平台的接入示例专门标着「横屏切换（手机请同时开启沉浸）」——
+   App 那圈界面是竖版的，横过来不收掉就是纯占地方）。
+   除此之外一律还回去：暂停 / 结算 / 回菜单时，B 站那圈界面就是玩家的退路，
+   不能把人留在一个既看不见退出口、又不知道怎么出去的全屏里。
+   横屏时的退路则是暂停页那颗「屏幕方向」——它切回竖屏的同时把界面还回来。 */
+function syncContainerImmersive(){
+  if (!container.ok) return;
+  const playing = (state === 'play' || state === 'dying');
+  requestContainerMode({ immersive: playing || container.orientation === 'landscape' });
+}
+
+/* 转屏做成按钮，不自动转：竖屏是这游戏正经支持的另一种版式，横还是竖该由玩家定。
+   桌面端不给这个按钮——那儿没有「转屏」这回事。 */
+function containerCanRotate(){
+  return container.ok && container.deviceType !== 'desktop';
+}
+function refreshRotateCta(){
+  if (!rotateGo || !rotateText) return;
+  const can = containerCanRotate() && container.orientation === 'portrait';
+  rotateGo.classList.toggle('hidden', !can);
+  rotateText.textContent = can ? '横过来视野更宽 —— 点一下就转' : '竖屏也能玩 · 横过来视野更宽';
+}
+function refreshScreenBtns(){
+  for (const b of screenBtns){
+    if (!b) continue;
+    b.classList.toggle('hidden', !containerCanRotate());
+    b.textContent = '屏幕方向：' + (container.orientation === 'landscape' ? '横屏' : '竖屏');
+  }
+  refreshRotateCta();
+}
+// 方向和沉浸一次传齐：文档要求「需同时变更时请一次传齐」，分两发会让页面闪两下
+function screenModeReq(orientation){
+  return { orientation, immersive: orientation === 'landscape' };
+}
+function toggleScreenOrientation(btn){
+  const want = container.orientation === 'landscape' ? 'portrait' : 'landscape';
+  if (btn) btn.disabled = true;
+  sfx('click');
+  requestContainerMode(screenModeReq(want)).then(ok => {
+    if (btn) btn.disabled = false;
+    if (ok) hideRotateTip();            // 转成了，这条提示就没必要再占着屏幕
+    else if (rotateText) rotateText.textContent = '这台设备转不过来 · 竖屏照样打得了';
+  });
+}
+if (rotateGo) rotateGo.onclick = () => toggleScreenOrientation(rotateGo);
+for (const b of screenBtns) if (b) b.onclick = () => toggleScreenOrientation(b);
+
+/* 能力探测走 isSupport（问的是当前容器的能力集，不是 SDK 版本）：
+   三个都在才打开这条路，缺一个就整条不走——半开的状态最难查。 */
+function initContainer(){
+  const t = toySdk();
+  if (!t || typeof t.isSupport !== 'function') return;
+  Promise.all([
+    t.isSupport('onContainerChange'),
+    t.isSupport('getContainerState'),
+    t.isSupport('setContainerMode'),
+  ]).then(all => {
+    if (!all.every(Boolean)) throw new Error('container api unavailable');
+    container.unsub = t.onContainerChange(applyContainerState);   // 这一行是同步抛的
+    container.ok = true;
+    return t.getContainerState();
+  }).then(applyContainerState)
+    .catch(() => {            // 任何一环不成立，就当没有这套 API，游戏本体一点不受影响
+      container.ok = false;
+      if (typeof container.unsub === 'function'){ try { container.unsub(); } catch (_){} }
+      container.unsub = null;
+    });
+}
 
 /* ========================================================
    音效 v2 —— 全部 Web Audio 实时合成，强调打击感
@@ -3051,6 +3238,9 @@ function drawTouchDiag(){
     'win ' + innerWidth + '×' + innerHeight + '  view ' + VW + '×' + VH +
       '  scale ' + viewScale.toFixed(2),
     'touch ' + isTouch + '  coarse ' + coarsePointer + '  pts ' + (navigator.maxTouchPoints || 0),
+    'ctn ' + (container.ok ? container.orientation + (container.immersive ? '+imm' : '') : 'off') +
+      '  dev ' + (container.deviceType || '-') + '  sa ' + container.safeArea.top + '/' +
+      container.safeArea.right + '/' + container.safeArea.bottom + '/' + container.safeArea.left,
   ];
   // 出过错就顶在最上面：计数正常但功能没反应时，答案基本都在这一行
   const firstErr = touchDiag.err || window.__zwFirstError;
@@ -3645,6 +3835,7 @@ function setScreen(s){
   document.getElementById('netHud').classList.toggle('hidden', !(playing && multiplayerActive()));
   if (!playing){ resetSticks(); hideTouchGuide(); }   // 离开战斗时清掉摇杆，防止手指状态卡住
   syncShopDom();                                      // 暂停/结算时把商店收起来，回来再放出去
+  syncContainerImmersive();                           // 开打进沉浸、停下就还回去（App 内才有效）
   if (touchPlay){ refreshSwapBtn(); layoutTouchUI(); }
   if (s === 'over') refreshOverRank();
   cvs.style.cursor = (playing && controlMode === 'mouse') ? 'none' : 'default';
@@ -4214,4 +4405,5 @@ function loop(now){
 }
 reset();
 onViewportChange();      // 放在最后：此时画布、触屏按钮、镜头都已就位
+initContainer();         // 容器能力是异步探的，探到了它会自己再排一次版
 requestAnimationFrame(loop);

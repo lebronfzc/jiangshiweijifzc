@@ -16,6 +16,7 @@
 - 键盘经典模式、鼠标射击模式和移动端触屏摇杆（横屏竖屏都能玩）
 - 9 种武器、5 张地图、5 级 BOSS、无双大招、3 档难度
 - 接 Toy JS SDK 的排行榜：得分榜 / 坚守波数榜，总榜与本周榜（仅统计标准难度）
+- 接 Toy JS SDK 的容器状态：App 内吃到真实安全区、一键转屏、开打自动进沉浸（拿不到就静默降级）
 - 波次刷怪、连击倍率、武器解锁、掉落补给和爆炸连锁
 - **局内货币**：击杀掉金币、自动吸附，波间开「补给」商店买弹药 / 治疗 / 无双充能
 - Web Audio 实时合成音效，无需额外音频资源
@@ -339,6 +340,52 @@ toy update 19242799980544 release\zombie-world.zip --poster images\poster.png --
 旧版之所以留着不删：**玩家反馈的评论都挂在它的关联动态上**（2026-08 那批手游反馈就是从那儿来的），
 删了评论就没了。它不能改成公开——Toy 平台规定 link-only 无法转公开，只能换 slug 新建，
 公开版正是这么来的。详见上文《Toy 平台能力（JS SDK）》同批查证记录。
+
+## Toy 平台能力（JS SDK）—— 查证记录 2026-08-27
+
+**文档 1.7.0（2026-08-27），比上一版 1.6.0 多了一组「容器状态」能力，本作已接。**
+核查方式同上一节：下载 SDK 本体（126,277 字节，上次 120,917）与发布平台前端包
+`index-BbN8KFo_.js`（`Last-Modified: 2026-08-27`）逐项比对，不靠通知里的转述。
+
+| 分类 | API | B站 App | Web 端 |
+|---|---|---|---|
+| 容器状态 🆕 | `getContainerState` `onContainerChange` `setContainerMode` | ✅ | ❌ |
+
+- `getContainerState()` → `{ deviceType, viewport, orientation, immersive, safeArea, changedFields }`；
+  `deviceType` 是 `phone / tablet / desktop / unknown`，`viewport` 和 `safeArea` 的单位是 CSS px。
+- `onContainerChange(fn)` 返回取消函数，**订阅后先收到一次当前完整状态**，之后只在变化时推送。
+- `setContainerMode({ orientation?, immersive? })`，`orientation` 还可以是 `auto`（跟随系统）。
+
+三条写在前面的坑，都是文档明写的：
+
+1. **`setContainerMode` resolve 了不代表切成了**，它只表示调用返回。判据是 `onContainerChange`
+   回调里的实际状态；收不到变化时无法确认成功（老客户端可能压根不通知）。
+2. **方向和沉浸同时变更时要一次传齐**，分两发页面会闪两下；手机切横屏时文档建议同时开沉浸。
+3. Web 端三个方法全部抛错，且 `onContainerChange` 是**同步抛**，不是返回 rejected promise。
+   站外浏览器、老版本 App（回 `103 old not support`）都走这条路，所以一律先 `isSupport` 再用、
+   调用处自己 catch——本作 `index.html` 顶上那层错误浮层会把未捕获的 rejection 糊在所有玩家屏幕上。
+
+### 本作接了什么（`script.js` 的「容器状态」一节）
+
+- **安全区**：容器报的 `safeArea` 写进 CSS 变量 `--sa-*`，样式里一律 `max(env(...), var(--sa-*))`。
+  这是最值的一处：App 内嵌 WebView 里 `env(safe-area-inset-*)` 读出来是 0，顶部栏就那么压在画面上。
+- **设备类型**：`isPhone()` 优先信 `deviceType`，不再只靠 `min(innerWidth, innerHeight) <= 540` 猜。
+- **一键转屏**：主菜单和暂停页各多一颗「屏幕方向」，竖屏提示条上也多一颗「横过来」。
+  **不自动转**——竖屏是本作正经支持的另一种版式，横还是竖由玩家定。
+- **沉浸模式**：开打时进沉浸（同样一块屏多看见一截战场），暂停 / 结算 / 回菜单退出来；
+  横屏时保持沉浸（App 那圈界面是竖版的）。退路始终在：暂停页那颗「屏幕方向」切回竖屏时把界面一并还回来。
+- 拿不到这套能力的环境（站外、PC、老版本 App）：两颗按钮都不显示，其余一切照旧。
+
+单测在 `test/container.test.js`，盯的就是上面那三条。
+
+### 鸿蒙版 B站（2026-08-27 平台通知）
+
+鸿蒙版 B站更新后已支持正常进入和使用 Toy，但**还不支持点赞、评论等互动功能**。
+
+对本作的影响：游戏本体不依赖任何互动 API；排行榜和容器状态都是「先问 `isSupport` 再用、
+拿不到就静默降级」，所以最坏情况也只是少两颗按钮。要盯的是真机表现——
+真出问题时让玩家在「玩法说明 → 触屏诊断」里截一张图，那一层现在会把容器账目
+（`ctn` 那行：方向、沉浸、安全区、设备类型）一起打出来。
 
 ## Toy 平台能力（JS SDK）—— 查证记录 2026-08-20
 

@@ -53,6 +53,9 @@
 <div id="rotate" class="hidden">
   <span class="rot-icon">📱</span>
   <span class="rot-text">竖屏也能玩 · 横过来视野更宽</span>
+  <!-- 「横过来」只在 App 内拿得到容器转屏能力时才显示（script.js:refreshRotateCta）。
+       站外浏览器转不了别人的屏，那儿这条横幅还是原来那句提示。 -->
+  <button id="rotateGo" class="rot-go hidden">横过来</button>
   <button id="rotateOk">知道了</button>
 </div>
 
@@ -111,6 +114,9 @@
   <button class="btn minor hidden" id="btnRank">🏆 排行榜</button>
   <button class="btn minor" id="btnDiff">难度：标准</button>
   <button class="btn minor" id="btnQuality">画质：自动</button>
+  <!-- 转屏按钮同样是「拿得到能力才出现」：站外和 PC 上保持隐藏，
+       不留一个点了没反应的按钮（和排行榜入口一个规矩） -->
+  <button class="btn minor hidden" id="btnScreen">屏幕方向：竖屏</button>
   <button class="btn minor" id="btnMode">操作模式：键盘经典</button>
   <button class="btn minor" id="btnAim">自动瞄准：开</button>
   <button class="btn minor" id="btnMap">选择地图：沙漠荒野</button>
@@ -198,7 +204,9 @@
       <b>移动</b>：按住<b>屏幕左半边</b>拖动，就地生成摇杆。<br>
       <b>换武器</b>：点右下角 <b>换枪</b> 循环切换（自动跳过没子弹的）；也可以<b>直接点最下面那排武器格</b>指定一把——
       左半边是走位区，压在武器格上照样能拖着走，<b>只点一下不拖</b>才算换枪。<br>
-      <b>竖屏也能玩</b>：竖屏自动换成竖版视野，横过来是宽视野。
+      <b>竖屏也能玩</b>：竖屏自动换成竖版视野，横过来是宽视野。<br>
+      <b>转不动屏？</b>在 B站 App 里点主菜单或暂停页的<b>屏幕方向</b>，由 App 来转——
+      App 内嵌页面常常被锁着竖屏，手动转是转不过来的。
     </details>
 
     <details>
@@ -256,6 +264,7 @@
   <button class="btn" id="btnResume">继续游戏</button>
   <button class="btn minor" id="btnMode2">操作模式：键盘经典</button>
   <button class="btn minor" id="btnAim2">自动瞄准：开</button>
+  <button class="btn minor hidden" id="btnScreen2">屏幕方向：竖屏</button>
   <button class="btn minor" id="btnQuit">返回主菜单</button>
 </div>
 

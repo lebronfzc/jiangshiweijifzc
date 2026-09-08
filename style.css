@@ -1,3 +1,12 @@
+  /* 安全区两个来源：站外浏览器只有 env()，B 站 App 内还有 Toy SDK 报回来的容器安全区。
+     WebView 里 env() 常年读出 0（我们并不是那个真正贴着屏幕边的元素），
+     顶部栏就这么压在画面上。所以下面一律用这四个 var，两个来源谁大听谁的；
+     --sa-* 由 script.js 的容器状态那一节写入，站外环境保持 0，样式一个字都不用改。 */
+  :root { --sa-top:0px; --sa-right:0px; --sa-bottom:0px; --sa-left:0px;
+    --pad-top:max(env(safe-area-inset-top), var(--sa-top));
+    --pad-right:max(env(safe-area-inset-right), var(--sa-right));
+    --pad-bottom:max(env(safe-area-inset-bottom), var(--sa-bottom));
+    --pad-left:max(env(safe-area-inset-left), var(--sa-left)); }
   /* 手机长按会弹出「选择/全选/拷贝」气泡、放大镜和图片保存菜单，
      而本作「按住右半屏 = 开火」正是一次长按，两者会打架：一边射击一边选文字。
      全局禁掉长按菜单与文字选择；输入框单独放行，联机大厅还要能打字粘贴。 */
@@ -17,7 +26,7 @@
   #swapBtn, #ultBtn, #pauseBtn { touch-action:none; }
   #wrap { position:fixed; left:0; top:0; width:100vw; height:100vh; height:100dvh;
     display:flex; align-items:center; justify-content:center; box-sizing:border-box;
-    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+    padding: var(--pad-top) var(--pad-right) var(--pad-bottom) var(--pad-left); }
   canvas#game { background:#d9cdb4; box-shadow:0 0 80px rgba(0,0,0,.9); }
   /* 这几层是要能上下滑的：html/body 上的 touch-action:none 是为了钉住游戏手势，
      但 iOS 会把它一路继承下来，结果长内容的弹层在手机上滑不动——
@@ -26,7 +35,7 @@
   .screen, #shop { touch-action:pan-y; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; }
   .screen { position:fixed; inset:0; display:flex; flex-direction:column; align-items:center;
     justify-content:center; background:rgba(14,12,9,.9); z-index:10; color:#e8e4d8; text-align:center;
-    overflow-y:auto; padding: max(12px,env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) max(12px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left)); }
+    overflow-y:auto; padding: max(12px,var(--pad-top)) max(12px,var(--pad-right)) max(12px,var(--pad-bottom)) max(12px,var(--pad-left)); }
   .hidden { display:none !important; }
   h1.logo { font-size:min(11vw,72px); font-weight:900; letter-spacing:.08em; line-height:1.1;
     color:#f2efe4; text-shadow:0 4px 0 #6e1313, 0 8px 0 #2a0707, 0 12px 24px rgba(0,0,0,.8); }
@@ -144,8 +153,8 @@
      整层吃触摸，所以打开时手指落哪儿都不会误生成摇杆（配合 JS 的 onUiElement）。 */
   #shop { position:fixed; inset:0; z-index:9; display:flex; align-items:center;
     justify-content:center; background:rgba(8,10,13,.78);
-    padding: max(10px,env(safe-area-inset-top)) max(10px,env(safe-area-inset-right))
-             max(10px,env(safe-area-inset-bottom)) max(10px,env(safe-area-inset-left)); }
+    padding: max(10px,var(--pad-top)) max(10px,var(--pad-right))
+             max(10px,var(--pad-bottom)) max(10px,var(--pad-left)); }
   /* 只让货架滚，钱包和「开打」钉住。
      横屏（812×375 这种）时整块面板比屏幕高，要是整块一起滚，「开打」就掉到屏幕外面去了——
      而它是这个界面唯一的出口，找不到等于卡死。 */
@@ -187,13 +196,16 @@
 
   /* ---------- 手机竖屏提示：只是一条可关掉的横幅，绝不挡玩 ---------- */
   #rotate { position:fixed; z-index:40; left:50%; transform:translateX(-50%);
-    top:calc(env(safe-area-inset-top) + 8px); max-width:min(92vw,420px);
+    top:calc(var(--pad-top) + 8px); max-width:min(92vw,420px);
     display:flex; align-items:center; gap:8px; padding:8px 10px;
     border:1px solid #57503f; border-radius:8px; background:rgba(14,12,9,.92); color:#d8d2c2; }
   #rotate .rot-icon { font-size:20px; line-height:1; animation:rotHint 2.4s ease-in-out infinite; }
   #rotate .rot-text { font-size:12.5px; letter-spacing:.04em; }
   #rotate button { flex:0 0 auto; min-height:28px; padding:4px 10px; border:1px solid #57503f;
     border-radius:5px; background:#26221a; color:#f2efe4; font:700 12px inherit; }
+  /* 一键转屏：只有 App 内拿得到容器能力时才会出现，是这条横幅上的主操作 */
+  #rotate .rot-go { background:#e03c31; border-color:#ff8a7a; color:#fff5f2; }
+  #rotate button[disabled] { opacity:.55; }
   @keyframes rotHint { 0%,86%,100%{transform:rotate(0)} 93%{transform:rotate(78deg)} }
   /* ---------- 触屏首次操作引导 ---------- */
   /* pointer-events:none —— 关掉它的那一下手指要照常算进操作，不能被浮层吃掉 */
@@ -316,7 +328,7 @@
   #roomCodePanel { display:flex; flex-direction:column; align-items:center; gap:8px; }
   #roomCodePanel .btn { margin-top:6px; }
 
-  #netHud { position:fixed; left:max(12px,env(safe-area-inset-left)); top:max(10px,env(safe-area-inset-top));
+  #netHud { position:fixed; left:max(12px,var(--pad-left)); top:max(10px,var(--pad-top));
     z-index:7; display:flex; align-items:center; gap:8px; padding:7px 9px;
     border:1px solid rgba(145,188,201,.45); border-radius:4px;
     background:rgba(9,13,16,.82); color:#a7b7bd; font-size:11px; pointer-events:auto; }
