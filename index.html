@@ -5,22 +5,93 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>僵尸危机：方块头 · 经典复刻版</title>
 <link rel="stylesheet" href="style.css">
+<!-- 最先装的一层：把任何脚本错误显示到屏幕上。
+     手机（尤其 App 内嵌 WebView）里看不到控制台，一处 throw 就是整块功能静默消失——
+     2026-08-21 iOS 真机反馈「走不动、开不了枪、联机板块整个没有」，就是这类症状，
+     而没有这一层，回来的信息永远只能是「就是不行」。
+     它必须在其它 script 之前、且自身不能依赖任何东西。 -->
+<script>
+(function(){
+  var shown = 0;
+  function show(msg){
+    if (shown >= 3) return; shown++;
+    try {
+      var d = document.createElement('div');
+      d.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:99999;'
+        + 'background:#7a1712;color:#ffe9e5;font:12px/1.5 monospace;'
+        + 'padding:6px 30px 6px 8px;white-space:pre-wrap;word-break:break-all;'
+        + '-webkit-user-select:text;user-select:text;max-height:38vh;overflow:auto';
+      d.textContent = msg;
+      var x = document.createElement('button');
+      x.textContent = '×';
+      x.style.cssText = 'position:absolute;right:4px;top:4px;width:22px;height:22px;'
+        + 'border:0;border-radius:4px;background:#ffe9e5;color:#7a1712;font:700 14px monospace';
+      x.onclick = function(){ d.parentNode && d.parentNode.removeChild(d); };
+      d.appendChild(x);
+      (document.body || document.documentElement).appendChild(d);
+    } catch (_){}
+  }
+  window.__zwFirstError = null;
+  window.addEventListener('error', function(e){
+    var m = (e && e.message) || 'script error';
+    var at = e && e.filename ? (' @ ' + String(e.filename).split('/').pop() + ':' + e.lineno + ':' + e.colno) : '';
+    if (!window.__zwFirstError) window.__zwFirstError = m + at;
+    show('脚本出错：' + m + at + '
+（这一条会让整块功能消失。截图发给作者即可定位）');
+  }, true);
+  window.addEventListener('unhandledrejection', function(e){
+    var m = (e && e.reason && (e.reason.message || e.reason)) || 'promise rejected';
+    if (!window.__zwFirstError) window.__zwFirstError = String(m);
+    show('异步出错：' + m);
+  });
+})();
+</script>
 </head>
 <body>
 <div id="wrap"><canvas id="game" width="960" height="640"></canvas></div>
 
 <div id="rotate" class="hidden">
-  <div class="rot-icon">📱</div>
-  <div class="rot-title">请旋转到横屏</div>
-  <div class="rot-sub">本游戏为横版视角，横屏体验最佳</div>
+  <span class="rot-icon">📱</span>
+  <span class="rot-text">竖屏也能玩 · 横过来视野更宽</span>
+  <!-- 「横过来」只在 App 内拿得到容器转屏能力时才显示（script.js:refreshRotateCta）。
+       站外浏览器转不了别人的屏，那儿这条横幅还是原来那句提示。 -->
+  <button id="rotateGo" class="rot-go hidden">横过来</button>
+  <button id="rotateOk">知道了</button>
 </div>
 
 <div id="touchUI">
+  <div class="ghost" id="ghostL"><span>移动</span></div>
+  <div class="ghost" id="ghostR"><span>瞄准射击</span></div>
   <div class="stick" id="stickL"><div class="nub" id="nubL"></div></div>
   <div class="stick" id="stickR"><div class="nub" id="nubR"></div></div>
 </div>
-<button id="swapBtn">切换武器</button>
+<button id="swapBtn"><b>换枪</b><i id="swapName">手枪</i></button>
 <button id="ultBtn">无双</button>
+<button id="pauseBtn">❚❚</button>
+
+<div id="touchGuide" class="hidden">
+  <div class="tg-half tg-left"><b>① 左半边</b>按住拖动<br>控制移动</div>
+  <div class="tg-half tg-right"><b>② 右半边</b>按住就开火<br>拖动决定射击方向</div>
+  <div class="tg-foot">③ 右下角 <b>换枪</b> / <b>无双</b>　·　也可以直接点最下面那排武器格换枪<br><span>碰一下屏幕就开打，这层说明会自己消失</span></div>
+</div>
+
+<!-- 波间商店：浮在战斗层之上的一层，不参与 state。
+     这样联机时它不会把战局暂停掉（房主的波次照常推进），
+     单人时也不用为了开个商店去动状态机。 -->
+<div id="shop" class="hidden">
+  <div class="shop-box">
+    <div class="shop-head">
+      <b class="shop-title">波间补给</b>
+      <span class="shop-wallet">金币 <b id="shopCash">0</b></span>
+    </div>
+    <div class="shop-grid" id="shopGrid"></div>
+    <div class="shop-foot">
+      <span id="shopFoot">买完点「开打」</span>
+      <button class="btn" id="btnShopGo">开 打</button>
+    </div>
+    <div class="shop-note">只卖消耗品 —— 枪靠连击解锁，钱买不到</div>
+  </div>
+</div>
 
 <div id="menu" class="screen">
   <div class="float-z z1">🧟</div>
@@ -36,11 +107,73 @@
     <div class="badge">无双<b>大招</b></div>
   </div>
   <div style="height:20px"></div>
-  <button class="btn" id="btnStart">▶ 开始游戏</button>
+  <button class="btn" id="btnStart">▶ 单人游戏</button>
+  <button class="btn online" id="btnOnline">◉ 多人联机</button>
+  <!-- 排行榜依赖 Toy JS SDK，拿不到 SDK 的环境（本地开发、站外托管）保持隐藏，
+       不留一个点了没反应的按钮 -->
+  <button class="btn minor hidden" id="btnRank">🏆 排行榜</button>
+  <button class="btn minor" id="btnDiff">难度：标准</button>
+  <button class="btn minor" id="btnQuality">画质：自动</button>
+  <!-- 转屏按钮同样是「拿得到能力才出现」：站外和 PC 上保持隐藏，
+       不留一个点了没反应的按钮（和排行榜入口一个规矩） -->
+  <button class="btn minor hidden" id="btnScreen">屏幕方向：竖屏</button>
   <button class="btn minor" id="btnMode">操作模式：键盘经典</button>
+  <button class="btn minor" id="btnAim">自动瞄准：开</button>
   <button class="btn minor" id="btnMap">选择地图：沙漠荒野</button>
   <button class="btn minor" id="btnHelp">操作说明</button>
   <div class="tip">击杀提升连击倍数解锁武器 · 小心每波的 BOSS · R 键释放无双</div>
+</div>
+
+<div id="online" class="screen hidden">
+  <h1 class="logo online-logo" style="font-size:min(8vw,48px)">多人<span>联机</span></h1>
+  <div class="sub">2~4 人 · 任意网络都能一起玩</div>
+  <div class="online-panel">
+    <div class="online-howto">
+      一个点「我开房」拿一个 <b>6 位房间码</b>，其他人点「我加入」输进去就同房了。<br>
+      <b>不需要在同一个网络</b>，各在各家也能一起打，最多 4 个人。<br>
+      掉线有 10 秒重连窗口；队友倒下后，队伍撑过这一波他就能复活。
+    </div>
+    <label class="online-field">
+      <span>玩家昵称</span>
+      <input id="onlineName" maxlength="12" autocomplete="nickname" placeholder="幸存者">
+    </label>
+    <label class="online-consent">
+      <input id="onlineConsent" type="checkbox">
+      <span>我同意为联机在两台设备之间直接传输昵称、操作输入与战局状态；不经过任何服务器，也不保存聊天或长期战绩。</span>
+    </label>
+    <div id="onlineJoin" class="online-actions">
+      <button class="btn" id="btnCreateRoom">我开房 · 出房间码</button>
+      <button class="btn minor" id="btnJoinP2P">我加入 · 输房间码</button>
+    </div>
+    <!-- 6 位房间码：走房间服务器（2~4 人，不要求同一个网络）。
+         码的字母表去掉了 I O 0 1，念出来不会错。 -->
+    <div id="roomCodePanel" class="hidden">
+      <div id="roomCodeStep" class="signal-step"></div>
+      <div id="roomCodeShow" class="hidden">
+        <div class="room-code" id="roomCodeBig">····</div>
+      </div>
+      <div id="roomCodeEnter" class="hidden">
+        <input id="roomCodeInput" class="room-code-input" inputmode="latin" autocapitalize="characters"
+               maxlength="6" placeholder="XXXXXX" autocomplete="off" spellcheck="false">
+        <button class="btn" id="btnRoomCodeGo">加 入</button>
+      </div>
+      <button class="btn minor" id="btnRoomCodeCancel">取消</button>
+    </div>
+    <div id="roomPanel" class="hidden">
+      <div id="roomMeta" class="room-meta"></div>
+      <div id="roomPlayers" class="room-players"></div>
+      <div class="room-actions">
+        <button class="btn minor" id="btnRoomMap">地图</button>
+        <button class="btn minor" id="btnReady">准备</button>
+        <button class="btn" id="btnRoomStart">开始战斗</button>
+      </div>
+    </div>
+    <div id="onlineStatus" class="online-status" role="status">输入昵称，然后一个人开房、一个人加入</div>
+  </div>
+  <div class="online-footer">
+    <button class="btn minor" id="btnLeaveRoom">离开房间</button>
+    <button class="btn minor" id="btnOnlineBack">返回主菜单</button>
+  </div>
 </div>
 
 <div id="mapsel" class="screen hidden">
@@ -52,24 +185,77 @@
 
 <div id="help" class="screen hidden">
   <div class="help-box">
-    <h2>▍操作说明</h2>
-    <b>键盘经典模式</b>：<kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 或方向键移动，朝面对方向射击<br>
-    <b>鼠标射击模式</b>：<b>左键</b>点击/按住朝指针方向<b>攻击</b>；<b>右键</b>点击移动到该点、按住持续跟随；也可用 WASD 移动<br>
-    射击：左键 / <kbd>空格</kbd> / <kbd>J</kbd>（可按住连射）<br>
-    切换武器：<b>鼠标滚轮</b> / <kbd>Q</kbd> <kbd>E</kbd> / 数字键 <kbd>1</kbd>－<kbd>9</kbd> ｜ 暂停：<kbd>P</kbd> / <kbd>Esc</kbd><br>
-    <b>无双大招</b>：按 <kbd>R</kbd> 或点击右下角图标发动，化身近战大师，双刀乱舞并<b>吸血</b>，持续 15 秒；
-    开局自带一次，之后每击杀 <b>50</b> 个敌人重新充能<br>
-    主菜单可选 <b>5 种战场地图</b>（带实时预览）｜ 触屏：左摇杆移动，右摇杆瞄准射击<br>
-    <h2 style="margin-top:14px">▍游戏规则</h2>
-    抵御从四周涌来的<b>方块头僵尸</b>与会喷火球的<b>红恶魔</b>。<b>每波一只 BOSS，共五级递进</b>：
-    壮汉巨尸（召唤）→ 掠行猎尸（连环冲锋+毒吐）→ 碎地暴尸（召唤/冲锋/震地）→
-    灾祸巨像（再加全向弹幕）→ <b>僵尸博士</b>（巨大体型·全技能·毒池·残血狂暴）。
-    脚下红圈/绿圈是技能预警，快躲开！击破 BOSS 必掉补给。
-    连续击杀提升<b>连击倍数</b>，
-    倍数达到 <b>×3 / ×5 / ×8 / ×11 / ×13 / ×15 / ×17 / ×20</b> 依次解锁：
-    马格南、乌兹冲锋枪、霰弹枪、加特林、手雷、油桶、喷火器、火箭筒。
-    受到伤害连击减半。敌人偶尔掉落<b>医疗箱</b>与<b>弹药箱</b>。地上的油桶射击即可引爆，还会连环殉爆！
+    <!-- 手机上第一屏只给「马上要用的四件事」。
+         这一屏原来是一千六百字的大段文字，手机要滚五六屏才到底，
+         底部的「触屏诊断」按钮因此谁也找不到。其余全部折进 <details>，
+         想看的人点开，不看的人一屏就走。 -->
+    <div class="help-quick">
+      <h2>▍手机上就这四件事</h2>
+      <div class="hq-row"><span class="hq-k">左半边</span><span>按住拖动 = 走</span></div>
+      <div class="hq-row"><span class="hq-k">右半边</span><span>按住 = 开火，不用瞄；拖动可以自己选方向</span></div>
+      <div class="hq-row"><span class="hq-k">换枪</span><span>点右下角<b>换枪</b>，或直接点最下面那排武器格</span></div>
+      <div class="hq-row"><span class="hq-k">无双</span><span>右下角红圆键　·　<b>暂停</b>点左上角 ❚❚</span></div>
+      <p class="hq-tip">竖屏横屏都能玩，不用特意转屏。一波打完会自动弹出商店。</p>
+    </div>
+
+    <details>
+      <summary>手机操作的细节</summary>
+      <b>射击</b>：按住<b>屏幕右半边</b>就开火；<b>按住不动</b>自动瞄最近的敌人，<b>拖动</b>则朝拖的方向瞄（仍带小幅吸附）。<br>
+      <b>移动</b>：按住<b>屏幕左半边</b>拖动，就地生成摇杆。<br>
+      <b>换武器</b>：点右下角 <b>换枪</b> 循环切换（自动跳过没子弹的）；也可以<b>直接点最下面那排武器格</b>指定一把——
+      左半边是走位区，压在武器格上照样能拖着走，<b>只点一下不拖</b>才算换枪。<br>
+      <b>竖屏也能玩</b>：竖屏自动换成竖版视野，横过来是宽视野。<br>
+      <b>转不动屏？</b>在 B站 App 里点主菜单或暂停页的<b>屏幕方向</b>，由 App 来转——
+      App 内嵌页面常常被锁着竖屏，手动转是转不过来的。
+    </details>
+
+    <details>
+      <summary>电脑操作</summary>
+      <b>键盘经典模式</b>：<kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 或方向键移动；
+      开着自动瞄准时会自己转向锁定的敌人，所以<b>可以边往后撤边打身后的僵尸</b><br>
+      <b>鼠标射击模式</b>：<b>左键</b>点击/按住朝指针方向<b>攻击</b>；<b>右键</b>点击移动到该点、按住持续跟随；也可用 WASD 移动<br>
+      射击：左键 / <kbd>空格</kbd> / <kbd>J</kbd>（可按住连射）<br>
+      切换武器：<b>鼠标滚轮</b> / <kbd>Q</kbd> <kbd>E</kbd> / 数字键 <kbd>1</kbd>－<kbd>9</kbd> ｜ 暂停：<kbd>P</kbd> / <kbd>Esc</kbd>
+    </details>
+
+    <details>
+      <summary>自动瞄准是怎么判的</summary>
+      主菜单与暂停页可开关，默认开。<b>没在自己瞄的时候</b>——键盘经典模式、或手机按住右半边不拖——
+      枪口自动跟住范围内<b>最近的敌人</b>，被锁的那只身上有黄色括号。
+      <b>自己在瞄的时候</b>——鼠标、或拖动右摇杆——只在准星附近做小角度吸附，方向仍然听你的。
+      锁定半径跟着枪走：喷火器只锁贴脸的，火箭筒能锁到屏幕边；超出屏幕的一律不锁。
+      <b>被石柱挡住的不锁</b>（子弹反正也打不到），范围内全被挡住时枪口交还给你。
+      换目标时枪口是<b>扫过去</b>的，不会瞬间甩到背后。<br>
+      <b>瞄油桶</b>：按住 <kbd>Shift</kbd> 枪口<b>甩到最近的油桶</b>上（括号变橙），松开回到锁敌。
+      鼠标 / 拖摇杆时不用按——准星压在油桶上就<b>优先于旁边的僵尸</b>。
+    </details>
+
+    <details>
+      <summary>金币与波间商店</summary>
+      击杀掉<b>金币</b>，走近自动飞过来（放久了吸得更远）。普通僵尸 <b>2</b>、红恶魔 <b>8</b>、BOSS <b>24~88</b>；
+      金币<b>不受连击倍数影响</b>。<br>
+      一波打完弹出<b>波间补给</b>：<b>弹药包</b>（每把已解锁的枪一格，越靠后解锁的越贵）、
+      <b>医疗包</b>（+35 生命 / 40）、<b>无双充能</b>（+1 次 / 120，最多存 2 次）。买完点<b>「开打」</b>进下一波。<br>
+      <b>只卖消耗品，枪买不到</b>——枪一律靠连击倍数解锁。金币<b>只在这一局有效</b>，重开归零，不影响排行榜。
+    </details>
+
+    <details>
+      <summary>游戏规则与解锁</summary>
+      抵御四周涌来的<b>方块头僵尸</b>与会喷火球的<b>红恶魔</b>。<b>每波一只 BOSS，前五波五级递进</b>：
+      壮汉巨尸（召唤）→ 掠行猎尸（连环冲锋+毒吐）→ 碎地暴尸（召唤/冲锋/震地）→
+      灾祸巨像（再加全向弹幕）→ <b>僵尸博士</b>（巨大体型·全技能·毒池·残血狂暴）。
+      第 6 波起 BOSS 在前四级之间<b>轮转</b>并逐波变强，<b>每逢 5 的倍数波</b>僵尸博士再次登场。
+      脚下红圈/绿圈是技能预警。击破 BOSS 必掉补给，<b>每波打完还会回复生命</b>。<br>
+      连击倍数达到 <b>×3 / ×5 / ×8 / ×11 / ×13 / ×15 / ×17 / ×20</b> 依次解锁：
+      马格南、乌兹、霰弹枪、加特林、手雷、油桶、喷火器、火箭筒。
+      <b>解锁不会把枪从手里换掉</b>。受到伤害连击减半。<br>
+      <b>无双大招</b>：<kbd>R</kbd> 或点右下角图标，双刀乱舞并<b>吸血</b>，持续 15 秒；开局自带一次，之后每击杀 <b>50</b> 个敌人充能。<br>
+      <b>排行榜</b>：主菜单进，分<b>得分榜</b>与<b>坚守波数榜</b>。阵亡结算页可上传成绩（<b>只统计标准难度</b>）。
+    </details>
   </div>
+  <!-- 触屏诊断：iOS / App 内嵌 WebView 上的触摸问题只能靠别人的真机，
+       打开后左上角显示实时触点账目，截一张图就够定位断在哪一环 -->
+  <button class="btn minor" id="btnTouchDbg">触屏诊断：关</button>
   <button class="btn minor" id="btnBack">返 回</button>
 </div>
 
@@ -77,16 +263,56 @@
   <h1 class="logo" style="font-size:min(9vw,48px)">暂 停</h1>
   <button class="btn" id="btnResume">继续游戏</button>
   <button class="btn minor" id="btnMode2">操作模式：键盘经典</button>
+  <button class="btn minor" id="btnAim2">自动瞄准：开</button>
+  <button class="btn minor hidden" id="btnScreen2">屏幕方向：竖屏</button>
   <button class="btn minor" id="btnQuit">返回主菜单</button>
 </div>
 
 <div id="over" class="screen hidden">
   <div class="deadtitle">你 阵 亡 了</div>
   <div class="stats" id="finalStats"></div>
+  <div id="overRank" class="over-rank hidden"></div>
+  <button class="btn rank-btn hidden" id="btnUpload">🏆 上传成绩到排行榜</button>
   <button class="btn" id="btnRetry">重新开始</button>
   <button class="btn minor" id="btnMenu">返回主菜单</button>
 </div>
 
+<div id="rank" class="screen hidden">
+  <h1 class="logo" style="font-size:min(8vw,44px)">排行<span>榜</span></h1>
+  <div class="sub">仅 统 计 标 准 难 度</div>
+  <div class="rank-tabs" id="rankBoardTabs">
+    <button class="rank-tab on" data-board="1">得分榜</button>
+    <button class="rank-tab" data-board="2">坚守波数</button>
+  </div>
+  <div class="rank-tabs" id="rankPeriodTabs">
+    <button class="rank-tab on" data-period="all">总榜</button>
+    <button class="rank-tab" data-period="week">本周</button>
+  </div>
+  <div class="rank-panel">
+    <div id="rankStatus" class="rank-status">加载中…</div>
+    <ol id="rankList" class="rank-list"></ol>
+  </div>
+  <div id="rankMine" class="rank-mine hidden"></div>
+  <button class="btn minor" id="btnRankBack">返 回</button>
+</div>
+
+<div id="netHud" class="hidden">
+  <span id="netRole">联机</span>
+  <b id="netRoom">——</b>
+  <span id="netCount">1/4</span>
+  <span id="netPing">-- ms</span>
+  <button id="netLeaveBtn">退出联机</button>
+</div>
+
+<!-- Toy JS SDK：排行榜/云存储走它。放在 script.js 之前且不加 defer，
+     让 script.js 顶层就能确定 window.toy 在不在，从而决定要不要显示排行榜入口。
+     CDN 挂了也只是 window.toy 缺失，游戏本体不受影响。 -->
+<script src="https://s1.hdslb.com/bfs/seed/toy/app/sdk/toy-sdk.js"></script>
+<script src="multiplayer.js"></script>
+<!-- 联机走 multiplayer.js（房间服务器，2~4 人）。
+     p2p.js 排在它之后：局域网直连整套保留着，导出成 window.zombiePeerNetwork，
+     目前不接管 window.zombieNetwork —— 那条路的传输层还没有真机结论 -->
+<script src="p2p.js"></script>
 <script src="script.js"></script>
 </body>
 </html>

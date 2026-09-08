@@ -1,0 +1,583 @@
+<script>
+(function(){
+"use strict";
+
+/* ============================================================
+   1. 舞台缩放：固定 1280x720，等比铺满任何投影仪
+   ============================================================ */
+var STAGE_W = 1280, STAGE_H = 720;
+var stage = document.getElementById('stage');
+function fit(){
+  var pad = 0;
+  var k = Math.min((window.innerWidth - pad) / STAGE_W, (window.innerHeight - pad) / STAGE_H);
+  stage.style.transform = 'scale(' + k + ')';
+}
+window.addEventListener('resize', fit);
+fit();
+
+/* ============================================================
+   2. 幻灯片与段落时间预算
+   ============================================================ */
+var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+var SEC_SPAN = { '-1':[0,2], '0':[2,6], '1':[6,12], '2':[12,18], '3':[18,25],
+                 '4':[25,37], '5':[37,49], '6':[49,54], '7':[54,60] };
+
+// 每张片子的"该讲完的时刻"：在本段区间内按序号均分
+(function assignTargets(){
+  var bySec = {};
+  slides.forEach(function(s){
+    var k = s.getAttribute('data-sec') || '-1';
+    (bySec[k] = bySec[k] || []).push(s);
+  });
+  Object.keys(bySec).forEach(function(k){
+    var span = SEC_SPAN[k] || [0,60], list = bySec[k], n = list.length;
+    list.forEach(function(s, i){
+      var fixed = parseFloat(s.getAttribute('data-at'));     // 单页可显式覆盖
+      s._at = isFinite(fixed) ? fixed
+            : span[0] + (span[1] - span[0]) * (i + 1) / n;   // 否则段内均分
+    });
+  });
+})();
+
+var idx = 0;
+var railFill = document.querySelector('#rail i');
+var notesEl = document.getElementById('notes');
+var webCanvas = document.getElementById('web');
+var helpEl = document.getElementById('help');
+
+function show(n, opts){
+  n = Math.max(0, Math.min(slides.length - 1, n));
+  if (slides[idx]) slides[idx].classList.remove('on');
+  idx = n;
+  var s = slides[idx];
+  s.classList.add('on');
+  railFill.style.width = ((idx) / (slides.length - 1) * 100) + '%';
+  webCanvas.classList.toggle('show', s.classList.contains('opener') || idx === 0);
+  helpEl.classList.toggle('on', idx === 0);
+  renderNote(s);
+  syncNav();
+  syncMinis(s);
+  if (!opts || !opts.silent) { try { history.replaceState(null, '', '#' + (idx + 1)); } catch(e){} }
+}
+function go(d){ show(idx + d); }
+
+function renderNote(s){
+  var t = s.querySelector('template.note');
+  var at = mmss((s._at || 0) * 60);
+  var badge = '<span class="note-at">' + (idx + 1) + ' / ' + slides.length +
+              ' &nbsp;·&nbsp; 该讲到 ' + at + '</span>';
+  notesEl.innerHTML = badge + (t ? t.innerHTML
+    : '<h4>' + (s.getAttribute('data-title') || '') + '</h4>（这一页没有讲稿备注）');
+}
+
+/* ============================================================
+   3. 键盘 / 遥控笔
+   ============================================================ */
+function inGame(){
+  var a = document.activeElement;
+  return a && a.classList && a.classList.contains('mini');
+}
+function inField(){
+  var a = document.activeElement;
+  return a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable);
+}
+document.addEventListener('keydown', function(e){
+  var k = e.key;
+
+  // 遥控笔 / 空格：任何时候都翻页
+  if (k === 'PageDown'){ e.preventDefault(); go(1); return; }
+  if (k === 'PageUp'){ e.preventDefault(); go(-1); return; }
+  if (k === ' ' || k === 'Spacebar'){ e.preventDefault(); go(1); return; }
+  if (k === 'Escape'){
+    if (gridEl.classList.contains('on')) { gridEl.classList.remove('on'); return; }
+    if (inGame()) { document.activeElement.blur(); return; }
+  }
+
+  // 在玩内嵌小游戏、或者正在往输入框里打字时，把方向键和字母让出去
+  if (inGame() || inField()) return;
+
+  if (k === 'ArrowRight' || k === 'ArrowDown' || k === 'Enter'){ e.preventDefault(); go(1); return; }
+  if (k === 'ArrowLeft' || k === 'ArrowUp'){ e.preventDefault(); go(-1); return; }
+  if (k === 'Home'){ e.preventDefault(); show(0); return; }
+  if (k === 'End'){ e.preventDefault(); show(slides.length - 1); return; }
+
+  var lower = k.toLowerCase();
+  if (lower === 'f'){ e.preventDefault(); toggleFull(); }
+  else if (lower === 'p'){ e.preventDefault(); notesEl.classList.toggle('on'); }
+  else if (lower === 't'){ e.preventDefault(); toggleClock(); }
+  else if (lower === 'o'){ e.preventDefault(); toggleGrid(); }
+  else if (lower === 'd'){ e.preventDefault(); toggleTheme(); }
+  else if (lower === 'k'){ e.preventDefault(); clearKey(); }
+  else if (lower === 'n'){ e.preventDefault(); toggleNav(); }
+});
+
+function toggleFull(){
+  if (document.fullscreenElement) document.exitFullscreen();
+  else if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen();
+}
+function toggleTheme(){
+  var r = document.documentElement;
+  r.setAttribute('data-theme', r.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+}
+
+/* ============================================================
+   4. 计时器：显示"已讲 / 该讲到"，超时变紫
+   ============================================================ */
+var clockEl = document.getElementById('clock');
+var ctime = document.getElementById('ctime'), ctarget = document.getElementById('ctarget');
+var t0 = null, tTimer = null;
+function mmss(sec){
+  sec = Math.max(0, Math.floor(sec));
+  var m = Math.floor(sec / 60), s = sec % 60;
+  return (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
+}
+function tickClock(){
+  if (t0 === null) return;
+  var el = (performance.now() - t0) / 1000;
+  var tgt = (slides[idx]._at || 0) * 60;
+  ctime.textContent = mmss(el);
+  ctarget.textContent = mmss(tgt);
+  clockEl.classList.toggle('late', el > tgt + 20);
+}
+function toggleClock(){
+  if (t0 === null){
+    t0 = performance.now();
+    clockEl.classList.add('on');
+    tTimer = setInterval(tickClock, 500);
+    tickClock();
+  } else {
+    t0 = null;
+    clearInterval(tTimer);
+    clockEl.classList.remove('on', 'late');
+  }
+}
+
+/* ============================================================
+   3b. 触摸翻页：这份稿子也公开挂在站点上，手机上没有键盘
+   ============================================================ */
+(function touchNav(){
+  var t0x = 0, t0y = 0, t0t = 0, moved = false;
+  function interactive(el){                       // 小游戏和输入框里的手势不抢
+    for (var n = el; n && n !== document; n = n.parentNode){
+      if (n.classList && (n.classList.contains('gamebox') || n.id === 'keybox')) return true;
+      if (n.tagName === 'INPUT' || n.tagName === 'BUTTON' || n.tagName === 'A') return true;
+    }
+    return false;
+  }
+  stage.addEventListener('touchstart', function(e){
+    if (e.touches.length !== 1) return;
+    t0x = e.touches[0].clientX; t0y = e.touches[0].clientY;
+    t0t = performance.now(); moved = false;
+  }, {passive:true});
+  stage.addEventListener('touchmove', function(e){
+    if (e.touches.length !== 1) return;
+    if (Math.abs(e.touches[0].clientX - t0x) > 12 || Math.abs(e.touches[0].clientY - t0y) > 12) moved = true;
+  }, {passive:true});
+  stage.addEventListener('touchend', function(e){
+    if (interactive(e.target)) return;
+    var t = e.changedTouches[0];
+    var dx = t.clientX - t0x, dy = t.clientY - t0y;
+    if (moved){                                    // 横向滑动翻页
+      if (Math.abs(dx) > 48 && Math.abs(dx) > Math.abs(dy) * 1.4) go(dx < 0 ? 1 : -1);
+      return;
+    }
+    if (performance.now() - t0t > 500) return;     // 长按不算
+    var r = stage.getBoundingClientRect();         // 轻点：右三分之二前进，左三分之一后退
+    go((t.clientX - r.left) / r.width > 0.34 ? 1 : -1);
+  }, {passive:true});
+})();
+
+/* ============================================================
+   3c. 滚轮翻页
+   ------------------------------------------------------------
+   难点是触控板：一次两指滑动会连发几十个 wheel 事件，直接 go(±1) 会一下翻十几页。
+   所以按「累积到阈值才翻一次 + 翻完进冷却」来做，鼠标滚轮一个档位刚好一页。
+   讲稿面板、总览这些自己能滚的地方，滚轮让给它们。
+   ============================================================ */
+(function wheelNav(){
+  // 真滚轮和触控板得分开对待，不然必然顾此失彼：
+  //   · 真滚轮：一次事件的 delta 就有 ~100，一档翻一页，只加很短的冷却，连滚能连翻
+  //   · 触控板：一次两指滑动连发几十个小 delta，还带惯性余波，
+  //     所以累积到阈值翻一页之后「下锁」，必须等这次滑动彻底停下来才重新武装
+  var NOTCH = 80;      // 单次事件超过这个量级 → 判定为真滚轮的一档
+  var COOL  = 140;     // 真滚轮翻页后的冷却
+  var STEP  = 110;     // 触控板累积到这个量算一页
+  var GAP   = 260;     // 静默超过这么久 = 这次手势结束，重新武装
+  var acc = 0, last = 0, lockUntil = 0, armed = true;
+
+  function scrollableUnder(el){          // 指针底下有没有「自己能滚」的容器
+    for (var n = el; n && n.nodeType === 1 && n !== document.body; n = n.parentNode){
+      if (n.classList && n.classList.contains('gamebox')) return n;   // 小游戏不抢
+      var cs = getComputedStyle(n);
+      if (/(auto|scroll)/.test(cs.overflowY) && n.scrollHeight > n.clientHeight + 1) return n;
+      if (/(auto|scroll)/.test(cs.overflowX) && n.scrollWidth > n.clientWidth + 1) return n;
+    }
+    return null;
+  }
+
+  window.addEventListener('wheel', function(e){
+    if (gridEl.classList.contains('on')) return;   // 总览开着时，滚轮归总览
+    if (scrollableUnder(e.target)) return;
+
+    // deltaMode: 0=像素 1=行 2=页。行/页模式只可能来自真滚轮（触控板一律发像素），
+    // 所以不去猜量级，直接按「一档」处理——火狐一档是 deltaY=3 行，换算过来才 48，
+    // 用像素阈值判会被误当成触控板，一档翻不动页。
+    var k = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
+    var dy = e.deltaY * k, dx = e.deltaX * k;
+    var d = Math.abs(dy) >= Math.abs(dx) ? dy : dx;   // 取幅度大的那个轴
+    if (!d) return;
+
+    e.preventDefault();                 // 顺带挡掉触控板横滑触发的「后退」手势
+
+    var now = performance.now();
+    if (now - last > GAP) { acc = 0; armed = true; }   // 新手势
+    last = now;
+
+    if (e.deltaMode !== 0 || Math.abs(d) >= NOTCH){   // —— 真滚轮
+      if (now < lockUntil) return;
+      go(d > 0 ? 1 : -1);               // 向下/向右 = 下一页
+      lockUntil = now + COOL; acc = 0; armed = true;
+      return;
+    }
+
+    if (!armed) return;                 // —— 触控板：这次滑动已经翻过了，等它停
+    acc += d;
+    if (Math.abs(acc) < STEP) return;
+    go(acc > 0 ? 1 : -1);
+    acc = 0; armed = false;
+  }, {passive:false});
+})();
+
+/* ============================================================
+   4b. 今天的临时 Key：只存本机浏览器，绝不写进文件
+   ============================================================ */
+var keyin = document.getElementById('keyin');
+var KEY_STORE = 'dsh-key-today';
+if (keyin){
+  try { keyin.value = localStorage.getItem(KEY_STORE) || ''; } catch(e){}
+  keyin.addEventListener('input', function(){
+    try { localStorage.setItem(KEY_STORE, keyin.value); } catch(e){}
+  });
+}
+function clearKey(){
+  if (keyin) keyin.value = '';
+  try { localStorage.removeItem(KEY_STORE); } catch(e){}
+}
+
+/* ============================================================
+   4c. 章节导航栏
+   ------------------------------------------------------------
+   跟 O 总览分工不同：总览是「停下来找一页」，导航栏是「一直知道自己在哪」。
+   它主要服务公开页的读者；讲的时候用遥控笔、不动鼠标，所以投影上基本不出现。
+   ============================================================ */
+var navEl = document.getElementById('nav');
+var navSecs = document.getElementById('navSecs');
+var navNow = document.getElementById('navNow');
+var navPinned = false, navTimer = null;
+
+(function buildNav(){
+  document.getElementById('navAll').textContent = slides.length;
+
+  // 每段取它的开场页当落点；没有开场页的（封面 / 运行表）落到第一页
+  var order = [], first = {};
+  slides.forEach(function(s, i){
+    var k = s.getAttribute('data-sec') || '-1';
+    if (!(k in first)){ first[k] = i; order.push(k); }
+    if (s.classList.contains('opener')) first[k] = i;   // 有开场页就用开场页
+  });
+
+  order.forEach(function(k){
+    var target = first[k];
+    var title = slides[target].getAttribute('data-title') || '';
+    var m = title.match(/^(\d+)\s+(.*)$/);            // 「04 现在换你」→ 04 + 现在换你
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.innerHTML = m ? '<span class="nn">' + m[1] + '</span>' + m[2] : '开场';
+    b.setAttribute('data-sec', k);
+    b.title = '跳到「' + (m ? m[2] : '开场') + '」';
+    b.addEventListener('click', function(){ show(target); b.blur(); pokeNav(); });
+    navSecs.appendChild(b);
+  });
+})();
+
+function syncNav(){
+  var k = slides[idx].getAttribute('data-sec') || '-1';
+  var bs = navSecs.children;
+  for (var i = 0; i < bs.length; i++)
+    bs[i].classList.toggle('cur', bs[i].getAttribute('data-sec') === k);
+  navNow.textContent = idx + 1;
+}
+
+function pokeNav(){                       // 有人动鼠标 / 摸屏幕就露出来，闲下来自己收回去
+  navEl.classList.add('on');
+  clearTimeout(navTimer);
+  if (!navPinned) navTimer = setTimeout(function(){ navEl.classList.remove('on'); }, 2600);
+}
+window.addEventListener('mousemove', pokeNav, {passive:true});
+window.addEventListener('touchend', pokeNav, {passive:true});
+document.getElementById('navPrev').addEventListener('click', function(e){ go(-1); e.currentTarget.blur(); pokeNav(); });
+document.getElementById('navNext').addEventListener('click', function(e){ go(1);  e.currentTarget.blur(); pokeNav(); });
+
+function toggleNav(){                     // N：钉住 / 收起
+  navPinned = !navPinned;
+  clearTimeout(navTimer);
+  navEl.classList.toggle('on', navPinned);
+}
+
+/* ============================================================
+   5. 总览
+   ============================================================ */
+var gridEl = document.getElementById('grid'), gg = document.getElementById('gg');
+slides.forEach(function(s, i){
+  var b = document.createElement('button');
+  b.className = 'gi';
+  b.innerHTML = '<span class="gn">' + (i + 1) + '</span><span class="gt">' +
+                (s.getAttribute('data-title') || '') + '</span>';
+  b.addEventListener('click', function(){ gridEl.classList.remove('on'); show(i); });
+  gg.appendChild(b);
+});
+function toggleGrid(){ gridEl.classList.toggle('on'); }
+
+/* ============================================================
+   6. 蛛网背景（复刻 tiaozhuxiansheng.com 的 canvas.spiderweb）
+   ============================================================ */
+(function web(){
+  var c = webCanvas, o = c.getContext('2d');
+  var reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var AMP = reduce ? 0.4 : 1, SPD = reduce ? 0.55 : 1;
+  var SPOKES = 26, RINGS = 11;
+  var cx, cy, R, arms = [], nodes = [];
+  var rnd = function(n){ var x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
+
+  function build(){
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    c.width = STAGE_W * dpr; c.height = STAGE_H * dpr;
+    o.setTransform(dpr, 0, 0, dpr, 0, 0);
+    cx = STAGE_W * 0.78; cy = STAGE_H * 0.34;
+    R = Math.hypot(Math.max(cx, STAGE_W - cx), Math.max(cy, STAGE_H - cy)) * 1.06;
+    arms = []; nodes = [];
+    for (var i = 0; i < SPOKES; i++){
+      var base = i / SPOKES * Math.PI * 2, arm = [];
+      for (var j = 1; j <= RINGS; j++){
+        var t = Math.pow(j / RINGS, 1.35);
+        var da = (rnd(i * 9.1 + j * 2.3) - 0.5) * (Math.PI / SPOKES) * 0.5;
+        var dr = (rnd(i * 3.7 + j * 5.9) - 0.5) * (R / RINGS) * 0.35;
+        var a = base + da, rad = t * R + dr;
+        arm.push({ a:a, bx: cx + Math.cos(a) * rad, by: cy + Math.sin(a) * rad,
+                   x:0, y:0, ph: rnd(i * 1.3 + j) * Math.PI * 2,
+                   sw: (0.7 + 1.2 * (j / RINGS)) * (R / 150) });
+      }
+      arms.push(arm);
+      for (var j2 = 2; j2 < RINGS; j2++) if (rnd(i * 4.1 + j2 * 7.7) > 0.87) nodes.push({ s:i, r:j2, ph: rnd(i + j2 * 2) * Math.PI * 2 });
+    }
+  }
+
+  function tone(name){
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || '120,96,180';
+  }
+
+  function frame(ms){
+    if (!c.classList.contains('show')) { raf = requestAnimationFrame(frame); return; }
+    var n = ms * 0.001, WEB = tone('--web'), STRONG = tone('--web-strong');
+    for (var i = 0; i < SPOKES; i++) for (var j = 0; j < RINGS; j++){
+      var p = arms[i][j];
+      var sway = Math.sin(n * 0.9 * SPD + p.ph) * p.sw * AMP;
+      var pull = Math.sin(n * 0.4 * SPD + p.a) * p.sw * 0.5 * AMP;
+      var x = p.bx + Math.cos(p.a + Math.PI / 2) * sway + Math.cos(p.a) * pull;
+      var y = p.by + Math.sin(p.a + Math.PI / 2) * sway + Math.sin(p.a) * pull;
+      p.x = p.x ? p.x + (x - p.x) * 0.2 : x;
+      p.y = p.y ? p.y + (y - p.y) * 0.2 : y;
+    }
+    o.clearRect(0, 0, STAGE_W, STAGE_H);
+    o.lineCap = 'round';
+    for (var i2 = 0; i2 < SPOKES; i2++){                       // 辐条
+      o.beginPath(); o.moveTo(cx, cy);
+      for (var j3 = 0; j3 < RINGS; j3++) o.lineTo(arms[i2][j3].x, arms[i2][j3].y);
+      var last = arms[i2][RINGS - 1];
+      var g = o.createLinearGradient(cx, cy, last.x, last.y);
+      g.addColorStop(0, 'rgba(' + WEB + ',0.30)');
+      g.addColorStop(1, 'rgba(' + WEB + ',0.03)');
+      o.strokeStyle = g; o.lineWidth = 0.7; o.stroke();
+    }
+    for (var j4 = 0; j4 < RINGS; j4++){                        // 环线
+      o.strokeStyle = 'rgba(' + WEB + ',' + ((1 - j4 / RINGS) * 0.26 + 0.04) + ')';
+      o.lineWidth = 0.55; o.beginPath();
+      for (var i3 = 0; i3 <= SPOKES; i3++){
+        var q = arms[i3 % SPOKES][j4];
+        if (i3 === 0) o.moveTo(q.x, q.y); else o.lineTo(q.x, q.y);
+      }
+      o.stroke();
+    }
+    for (var m = 0; m < nodes.length; m++){                    // 露珠
+      var nd = nodes[m], q2 = arms[nd.s][nd.r];
+      var tw = 0.45 + 0.55 * (0.5 + 0.5 * Math.sin(n * 1.6 * SPD + nd.ph));
+      o.fillStyle = 'rgba(' + STRONG + ',' + (tw * 0.85) + ')';
+      o.beginPath(); o.arc(q2.x, q2.y, 1.6, 0, 6.2832); o.fill();
+    }
+    o.fillStyle = 'rgba(' + STRONG + ',0.5)';
+    o.beginPath(); o.arc(cx, cy, 2, 0, 6.2832); o.fill();
+    raf = requestAnimationFrame(frame);
+  }
+  var raf;
+  build();
+  raf = requestAnimationFrame(frame);
+})();
+
+/* ============================================================
+   7. 内嵌小游戏：第 03 段那四句话的真实产物
+   ============================================================ */
+function Mini(cv, level){
+  var o = cv.getContext('2d');
+  var W = cv.width, H = cv.height;
+  var keys = Object.create(null), mouse = { x: W / 2, y: H / 2 };
+  var running = false, raf = 0, last = 0;
+  var P, bullets, foes, score, dead, spawnT;
+
+  function reset(){
+    P = { x: W / 2, y: H / 2, s: 17, v: 250 };
+    bullets = []; foes = []; score = 0; dead = false; spawnT = 0.7;
+  }
+  reset();
+
+  cv.tabIndex = 0;
+  cv.setAttribute('aria-label', '内嵌演示小游戏，点击后用方向键或 WASD 移动');
+  cv.addEventListener('keydown', function(e){
+    keys[e.key.toLowerCase()] = true;
+    if (['arrowup','arrowdown','arrowleft','arrowright',' '].indexOf(e.key.toLowerCase()) >= 0) e.preventDefault();
+    if (level >= 4 && e.key.toLowerCase() === 'r' && dead) reset();
+  });
+  cv.addEventListener('keyup', function(e){ keys[e.key.toLowerCase()] = false; });
+  cv.addEventListener('mousemove', function(e){
+    var r = cv.getBoundingClientRect();
+    mouse.x = (e.clientX - r.left) / r.width * W;
+    mouse.y = (e.clientY - r.top) / r.height * H;
+  });
+  cv.addEventListener('mousedown', function(e){
+    cv.focus();
+    if (level < 2 || dead) return;
+    var dx = mouse.x - P.x, dy = mouse.y - P.y, d = Math.hypot(dx, dy) || 1;
+    bullets.push({ x: P.x, y: P.y, vx: dx / d * 470, vy: dy / d * 470 });
+  });
+  cv.addEventListener('focus', function(){ cv.parentNode.style.borderColor = 'var(--accent)'; });
+  cv.addEventListener('blur', function(){ cv.parentNode.style.borderColor = ''; });
+
+  function step(dt){
+    if (dead) return;
+    var ax = 0, ay = 0;
+    if (keys['arrowleft'] || keys['a']) ax -= 1;
+    if (keys['arrowright'] || keys['d']) ax += 1;
+    if (keys['arrowup'] || keys['w']) ay -= 1;
+    if (keys['arrowdown'] || keys['s']) ay += 1;
+    if (ax || ay){
+      var m = Math.hypot(ax, ay);
+      P.x += ax / m * P.v * dt; P.y += ay / m * P.v * dt;
+    }
+    P.x = Math.max(P.s, Math.min(W - P.s, P.x));
+    P.y = Math.max(P.s, Math.min(H - P.s, P.y));
+
+    for (var i = bullets.length - 1; i >= 0; i--){
+      var b = bullets[i];
+      b.x += b.vx * dt; b.y += b.vy * dt;
+      if (b.x < -20 || b.x > W + 20 || b.y < -20 || b.y > H + 20) bullets.splice(i, 1);
+    }
+    if (level < 3) return;
+
+    spawnT -= dt;
+    if (spawnT <= 0 && foes.length < 9){
+      spawnT = 1.25;
+      var edge = Math.floor(Math.random() * 4), fx, fy;
+      if (edge === 0){ fx = Math.random() * W; fy = -16; }
+      else if (edge === 1){ fx = W + 16; fy = Math.random() * H; }
+      else if (edge === 2){ fx = Math.random() * W; fy = H + 16; }
+      else { fx = -16; fy = Math.random() * H; }
+      foes.push({ x: fx, y: fy, s: 15, v: 62 + Math.random() * 26 });
+    }
+    for (var j = foes.length - 1; j >= 0; j--){
+      var f = foes[j];
+      var dx = P.x - f.x, dy = P.y - f.y, d = Math.hypot(dx, dy) || 1;
+      f.x += dx / d * f.v * dt; f.y += dy / d * f.v * dt;
+      if (level < 4) continue;
+      if (Math.abs(dx) < P.s + f.s - 8 && Math.abs(dy) < P.s + f.s - 8){ dead = true; return; }
+      for (var q = bullets.length - 1; q >= 0; q--){
+        var bb = bullets[q];
+        if (Math.abs(bb.x - f.x) < f.s && Math.abs(bb.y - f.y) < f.s){
+          bullets.splice(q, 1); foes.splice(j, 1); score++; break;
+        }
+      }
+    }
+  }
+
+  function draw(){
+    o.fillStyle = '#0e0e12'; o.fillRect(0, 0, W, H);
+    o.fillStyle = 'rgba(255,255,255,.035)';
+    for (var gx = 0; gx < W; gx += 44) o.fillRect(gx, 0, 1, H);
+    for (var gy = 0; gy < H; gy += 44) o.fillRect(0, gy, W, 1);
+
+    o.fillStyle = '#ff5d52';
+    for (var i = 0; i < foes.length; i++) o.fillRect(foes[i].x - foes[i].s, foes[i].y - foes[i].s, foes[i].s * 2, foes[i].s * 2);
+    o.fillStyle = '#ffffff';
+    for (var j = 0; j < bullets.length; j++) o.fillRect(bullets[j].x - 3, bullets[j].y - 3, 6, 6);
+    o.fillStyle = dead ? '#6b6357' : '#ffffff';
+    o.fillRect(P.x - P.s, P.y - P.s, P.s * 2, P.s * 2);
+
+    if (level >= 4){
+      o.fillStyle = 'rgba(255,255,255,.72)';
+      o.font = '600 20px "JetBrains Mono", Consolas, monospace';
+      o.textAlign = 'left';
+      o.fillText('SCORE ' + score, 18, 32);
+    }
+    if (dead){
+      o.fillStyle = 'rgba(14,14,18,.78)'; o.fillRect(0, 0, W, H);
+      o.textAlign = 'center';
+      o.fillStyle = '#ff5d52';
+      o.font = '700 30px "JetBrains Mono", Consolas, monospace';
+      o.fillText('GAME OVER', W / 2, H / 2 - 6);
+      o.fillStyle = 'rgba(255,255,255,.62)';
+      o.font = '400 16px "JetBrains Mono", Consolas, monospace';
+      o.fillText('得分 ' + score + ' — 按 R 重来', W / 2, H / 2 + 28);
+    }
+    if (!dead && document.activeElement !== cv){
+      o.textAlign = 'center';
+      o.fillStyle = 'rgba(255,255,255,.34)';
+      o.font = '400 15px "PingFang SC","Noto Sans SC",sans-serif';
+      o.fillText('点一下这里，然后用方向键 / WASD', W / 2, H - 22);
+    }
+  }
+
+  function loop(ms){
+    if (!running) return;
+    var dt = Math.min(0.05, (ms - last) / 1000 || 0);
+    last = ms;
+    step(dt); draw();
+    raf = requestAnimationFrame(loop);
+  }
+  return {
+    start: function(){ if (running) return; running = true; last = performance.now(); raf = requestAnimationFrame(loop); },
+    stop:  function(){ running = false; cancelAnimationFrame(raf); reset(); draw(); }
+  };
+}
+
+var minis = [];
+Array.prototype.forEach.call(document.querySelectorAll('canvas.mini'), function(cv){
+  var m = Mini(cv, parseInt(cv.getAttribute('data-stage'), 10) || 1);
+  minis.push({ el: cv, m: m });
+  m.stop();
+});
+function syncMinis(slide){
+  minis.forEach(function(x){
+    if (slide.contains(x.el)) x.m.start(); else x.m.stop();
+  });
+}
+
+/* ============================================================
+   8. 启动
+   ============================================================ */
+if (/[?&]theme=dark/.test(location.search)) document.documentElement.setAttribute('data-theme','dark');
+// 开场先亮一下再收回去：不这么做，读者根本不知道底下有这条栏
+setTimeout(pokeNav, 400);
+var hash = parseInt((location.hash || '').replace('#', ''), 10);
+show(isFinite(hash) && hash > 0 ? hash - 1 : 0, { silent: true });
+window.addEventListener('beforeprint', function(){ slides.forEach(function(s){ s.classList.add('on'); }); });
+window.addEventListener('afterprint', function(){ slides.forEach(function(s, i){ s.classList.toggle('on', i === idx); }); });
+})();
+</script>

@@ -15,6 +15,26 @@ Toy 不应该只按“一个固定尺寸页面”来设计，而应该根据当�
 
 如果平台 SDK 后续能提供当前用户的设备类型、容器环境等参数，创作者可以直接读取；在没有 SDK 参数时，也可以用浏览器现有能力完成大部分适配。
 
+> **追记（2026-08-27）：这份文档里「如果 SDK 以后能提供……」的假设已经成真。**
+> Toy JS SDK 文档 1.7.0 上线了一组容器状态能力，**仅在 B站 App 内可用**：
+>
+> - `toy.getContainerState()` —— 读一次当前状态：
+>   `{ deviceType, viewport{width,height}, orientation, immersive, safeArea{top,right,bottom,left}, changedFields }`
+> - `toy.onContainerChange(listener)` —— 订阅状态变化，返回取消函数；订阅后先收到一次当前完整状态
+> - `toy.setContainerMode({ orientation?: 'portrait' | 'landscape' | 'auto', immersive?: boolean })` —— 请求容器切换
+>
+> 三条使用要点，都是文档里明写的：
+>
+> 1. **`setContainerMode` 的 Promise resolve 不代表切成了**，只代表调用返回了。要确认，
+>    先 `onContainerChange` 监听、再调用，之后收到的状态和请求一致才算成功；
+>    收不到变化时无法确认成功（老客户端可能压根不通知）。
+> 2. **方向和沉浸需要同时变更时一次传齐**，分两发会让页面闪两下；手机切横屏时文档建议同时开沉浸。
+> 3. Web 端调这三个方法会直接抛错，其中 `onContainerChange` 还是**同步抛**——
+>    先用 `isSupport` 判断，并且调用处自己 catch，别让未捕获的 rejection 冒到玩家屏幕上。
+>
+> 也就是说，下面「按浏览器能力猜」的那套仍然是地基（站外、PC、老版本 App 都只有它），
+> SDK 参数是地基之上更准的一层。本项目的接法见 `script.js` 的「容器状态」一节。
+
 ## 为什么 Toy 需要做自适应
 
 消费者访问 Toy 的方式并不统一。
@@ -347,6 +367,11 @@ if (env.coarsePointer) {
 - 分享卡片进入时，用户可能不是从 Toy 首页开始理解内容，需要首屏清楚。
 
 ## SDK 参数建议
+
+> **2026-08-27 追记**：这一节提的 `deviceType`、视口尺寸、`safeArea` 平台已经提供了
+> （见开头的追记，字段名是 `deviceType` / `viewport` / `safeArea`），
+> 还多给了方向、沉浸态和主动切换的能力；`platform`、`container`、`inputType` 仍然没有——
+> 这三样继续按下面「按浏览器能力猜」的办法自己判。
 
 如果 Toy SDK 能提供当前访问环境，对创作者会非常有帮助。
 
