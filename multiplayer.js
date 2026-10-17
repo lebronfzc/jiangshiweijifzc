@@ -31,7 +31,7 @@
   /* 线上房间服务器的地址。
      不能靠 location.host 猜：游戏在 Toy 平台上跑在 www.bilibilitoy.com 的 iframe 里，
      跟服务器根本不同源，猜出来的地址必然是错的。所以这里写死一个默认值，
-     由 localStorage 的 zombie-world-server 覆盖（换服务器 / 真机排查时不用重新过审）。
+     由 localStorage 的 zombie-world-multiplayer-server 覆盖（换服务器 / 真机排查时不用重新过审）。
      留空 = 回落到 location.host —— 本地开发时游戏就是这台服务器自己发的，正好对得上。
 
      反过来一条同样重要：服务器那边的 ALLOWED_ORIGINS 必须写 https://www.bilibilitoy.com，
